@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>fungi-controller</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍄</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink-900: #12161f;
+    --ink-700: #1b202d;
+    --ink-500: #3a4152;
+    --ink-400: #5b6376;
+    --bone-300: #d8d6cf;
+    --bone-200: #e9e7e1;
+    --bone-100: #f6f5f2;
+    --blue: #0c5cfc;
+    --blue-800: #083a9e;
+    --blue-100: #e6eeff;
+    --orange: #fc7100;
+    --orange-700: #d15e00;
+    --orange-100: #fff0e3;
+
+    --background: var(--bone-100);
+    --foreground: var(--ink-500);
+    --heading: var(--ink-700);
+    --muted: var(--bone-200);
+    --muted-foreground: var(--ink-400);
+    --card: #ffffff;
+    --border: var(--bone-300);
+    --ring: rgba(58, 65, 82, 0.1);
+    --ok: var(--blue);
+    --ok-bg: var(--blue-100);
+    --ok-fg: var(--blue-800);
+    --err: var(--orange);
+    --err-bg: var(--orange-100);
+    --err-fg: var(--orange-700);
+
+    --radius: 14px;
+    --shadow-soft: 0 1px 2px rgba(27, 32, 45, 0.06), 0 8px 24px rgba(27, 32, 45, 0.06);
+    --font-sans: "Hanken Grotesk", system-ui, sans-serif;
+    --font-mono: "Fira Code", ui-monospace, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: var(--ink-700);
+      --foreground: #c9cdd6;
+      --heading: var(--bone-100);
+      --muted: #151a25;
+      --muted-foreground: #8b93a4;
+      --card: var(--ink-900);
+      --border: #2a3142;
+      --ring: rgba(201, 205, 214, 0.1);
+      --ok: #72a0fd;
+      --ok-bg: #16233d;
+      --ok-fg: #93b6fd;
+      --err: #fc8d32;
+      --err-bg: rgba(252, 141, 50, 0.2);
+      --err-fg: #fc8d32;
+      --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    display: flex;
+    align-items: center;
+    height: 56px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--background) 80%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--heading);
+  }
+
+  main {
+    flex: 1;
+    width: 100%;
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 32px 16px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 480px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px;
+    border-radius: calc(var(--radius) * 1.4);
+    background: var(--card);
+    box-shadow: 0 0 0 1px var(--ring), var(--shadow-soft);
+    transition: opacity 0.2s;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 20px;
+  }
+
+  .label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+
+  .label svg {
+    width: 16px;
+    height: 16px;
+    color: var(--ok);
+  }
+
+  .value {
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--heading);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .unit {
+    margin-left: 4px;
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .badge.error { background: var(--err-bg); color: var(--err-fg); }
+  .badge.off { background: var(--muted); color: var(--muted-foreground); }
+
+  .control {
+    grid-column: 1 / -1;
+  }
+
+  .title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--heading);
+  }
+
+  .help {
+    color: var(--muted-foreground);
+  }
+
+  form {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+  }
+
+  .field {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+
+  input {
+    width: 100%;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) * 0.8);
+    background: transparent;
+    color: var(--heading);
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  input:focus-visible {
+    border-color: var(--ok);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent);
+  }
+
+  input[aria-invalid="true"] { border-color: var(--err); }
+
+  select {
+    height: 36px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) * 0.8);
+    background: var(--card);
+    color: var(--heading);
+    font: inherit;
+    outline: none;
+    cursor: pointer;
+  }
+
+  select:focus-visible {
+    border-color: var(--ok);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent);
+  }
+
+  .time {
+    display: flex;
+    gap: 6px;
+  }
+
+  .time input { flex: 1; min-width: 0; }
+
+  .switch {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 10px;
+    font-weight: 500;
+    color: var(--foreground);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .switch input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+  }
+
+  .track {
+    position: relative;
+    flex-shrink: 0;
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--border);
+    transition: background 0.15s;
+  }
+
+  .track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform 0.15s;
+  }
+
+  .switch input:checked + .track { background: var(--ok); }
+  .switch input:checked + .track::after { transform: translateX(16px); }
+  .switch input:focus-visible + .track { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent); }
+
+  .countdown { font-family: var(--font-mono); }
+
+  button {
+    height: 36px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: calc(var(--radius) * 0.8);
+    background: var(--ok);
+    color: var(--card);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent); }
+
+  .message {
+    min-height: 18px;
+    font-size: 12px;
+  }
+
+  .message.ok { color: var(--ok); }
+  .message.error { color: var(--err); }
+
+  @media (max-width: 480px) {
+    form { flex-direction: column; align-items: stretch; }
+  }
+
+  .card .badge.error { display: none; }
+  .sensor-error .card .badge.error { display: inline-flex; }
+
+  footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+
+  .footer-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .dot {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+
+  .dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: inherit;
+    animation: pulse 2s ease-out infinite;
+  }
+
+  @keyframes pulse {
+    from { transform: scale(1); opacity: 0.6; }
+    to { transform: scale(2.6); opacity: 0; }
+  }
+
+  .mono { font-family: var(--font-mono); }
+
+  body.offline .card { opacity: 0.5; }
+  body.offline .dot { background: var(--err); }
+  body.offline .dot::after { animation: none; }
+  body.offline footer .badge { background: var(--err-bg); color: var(--err-fg); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot::after { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">🍄 fungi-controller</div>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section class="card">
+        <div class="card-header">
+          <span class="label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>
+            Temperatura
+          </span>
+          <span class="badge error">ERROR SENSOR</span>
+        </div>
+        <div><span class="value" id="temperature">—</span><span class="unit">°C</span></div>
+      </section>
+      <section class="card">
+        <div class="card-header">
+          <span class="label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>
+            Humedad
+          </span>
+          <span class="badge error">ERROR SENSOR</span>
+        </div>
+        <div><span class="value" id="humidity">—</span><span class="unit">%</span></div>
+      </section>
+      <section class="card control">
+        <div class="card-header">
+          <span class="title">Control de humedad</span>
+          <span class="badge off" id="hum-badge">APAGADO</span>
+        </div>
+        <p class="help">El humidificador se enciende por debajo del mínimo y se apaga al llegar al máximo.</p>
+        <label class="switch">
+          <input type="checkbox" id="hum-enabled">
+          <span class="track"></span>
+          Control activo
+        </label>
+        <form id="hum-form" novalidate>
+          <div class="field">
+            <label for="hum-min">Mínimo %</label>
+            <input id="hum-min" type="number" min="0" max="100" step="1" inputmode="numeric" required>
+          </div>
+          <div class="field">
+            <label for="hum-max">Máximo %</label>
+            <input id="hum-max" type="number" min="0" max="100" step="1" inputmode="numeric" required>
+          </div>
+          <button type="submit" id="hum-save">Guardar</button>
+        </form>
+        <p class="message" id="hum-message" role="status"></p>
+      </section>
+      <section class="card control">
+        <div class="card-header">
+          <span class="title">Calefacción</span>
+          <span class="badge off" id="heat-badge">DESACTIVADO</span>
+        </div>
+        <p class="help">El generador de calor se enciende por debajo de la mínima y se apaga al llegar a la máxima.</p>
+        <label class="switch">
+          <input type="checkbox" id="heat-enabled">
+          <span class="track"></span>
+          Control activo
+        </label>
+        <form id="heat-form" novalidate>
+          <div class="field">
+            <label for="heat-min">Mínima °C</label>
+            <input id="heat-min" type="number" min="0" max="50" step="0.5" inputmode="decimal" required>
+          </div>
+          <div class="field">
+            <label for="heat-max">Máxima °C</label>
+            <input id="heat-max" type="number" min="0" max="50" step="0.5" inputmode="decimal" required>
+          </div>
+          <button type="submit" id="heat-save">Guardar</button>
+        </form>
+        <p class="message" id="heat-message" role="status"></p>
+      </section>
+      <section class="card control">
+        <div class="card-header">
+          <span class="title">Extractor</span>
+          <span class="badge off" id="extractor">DESACTIVADO</span>
+        </div>
+        <p class="help" id="ext-help">Alterna entre el tiempo apagado y el tiempo encendido. Al arrancar empieza encendido.</p>
+        <label class="switch">
+          <input type="checkbox" id="extEnabled">
+          <span class="track"></span>
+          Ciclo activo
+        </label>
+        <form id="ext-times" novalidate>
+          <div class="field">
+            <label for="extOff">Tiempo apagado</label>
+            <div class="time">
+              <input id="extOff" type="number" min="1" step="1" inputmode="numeric" required>
+              <select id="extOffUnit" aria-label="Unidad del tiempo apagado">
+                <option value="1">seg</option>
+                <option value="60">min</option>
+                <option value="3600">h</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="extOn">Tiempo encendido</label>
+            <div class="time">
+              <input id="extOn" type="number" min="1" step="1" inputmode="numeric" required>
+              <select id="extOnUnit" aria-label="Unidad del tiempo encendido">
+                <option value="1">seg</option>
+                <option value="60">min</option>
+                <option value="3600">h</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" id="ext-save">Guardar</button>
+        </form>
+        <p class="message" id="ext-message" role="status"></p>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-status">
+      <span class="dot"></span>
+      <span id="status">status OK</span>
+      <span class="badge" id="badge">ONLINE</span>
+    </div>
+    <div>Última lectura <span class="mono" id="checked">—</span></div>
+  </footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(1));
+
+  function renderOnline(online) {
+    document.body.classList.toggle("offline", !online);
+    $("badge").textContent = online ? "ONLINE" : "OFFLINE";
+    $("status").textContent = online ? "status OK" : "sin conexión";
+  }
+
+  function renderDeviceBadge(id, enabled, on) {
+    $(id).textContent = !enabled ? "DESACTIVADO" : on ? "ENCENDIDO" : "APAGADO";
+    $(id).classList.toggle("off", !enabled || !on);
+  }
+
+  function errorText(err) {
+    return err instanceof TypeError ? "No se pudo conectar con el controlador." : err.message;
+  }
+
+  function showMessage(text, kind, id) {
+    $(id).textContent = text;
+    $(id).className = "message " + kind;
+  }
+
+  const MAX_SEC = 86400;
+  let extRemaining = null;
+  let extEnabledSaved = false;
+
+  function formatRemaining(sec) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return (h ? h + ":" + pad(m) : m) + ":" + pad(s);
+  }
+
+  function renderExtractor(on, remaining) {
+    renderDeviceBadge("extractor", extEnabledSaved, on);
+    extRemaining = remaining;
+    renderCountdown(on);
+  }
+
+  function renderCountdown(on = $("extractor").textContent === "ENCENDIDO") {
+    if (!extEnabledSaved || extRemaining === null) {
+      $("ext-help").textContent = "Alterna entre el tiempo apagado y el tiempo encendido. Al arrancar empieza encendido.";
+      return;
+    }
+    $("ext-help").innerHTML = (on ? "Se apaga en " : "Se enciende en ")
+      + '<span class="countdown">' + formatRemaining(extRemaining) + "</span>";
+  }
+
+  setInterval(() => {
+    if (extRemaining !== null && extRemaining > 0) {
+      extRemaining--;
+      renderCountdown();
+      if (extRemaining === 0) setTimeout(update, 500);
+    }
+  }, 1000);
+
+  // Muestra los segundos en la unidad más grande que los divida exacto
+  function setTime(inputId, unitId, sec) {
+    const unit = [3600, 60, 1].find((u) => sec % u === 0);
+    $(inputId).value = sec / unit;
+    $(unitId).value = unit;
+  }
+
+  function getTime(inputId, unitId) {
+    const value = $(inputId).value;
+    return value === "" ? NaN : Number(value) * Number($(unitId).value);
+  }
+
+  async function loadExtractor() {
+    try {
+      const res = await fetch("/extractor", { cache: "no-store" });
+      const cfg = await res.json();
+      extEnabledSaved = cfg.enabled;
+      $("extEnabled").checked = cfg.enabled;
+      setTime("extOff", "extOffUnit", cfg.offSec);
+      setTime("extOn", "extOnUnit", cfg.onSec);
+    } catch {
+      showMessage("No se pudo cargar la configuración del extractor.", "error", "ext-message");
+    }
+  }
+
+  async function saveExtractor() {
+    const offSec = getTime("extOff", "extOffUnit");
+    const onSec = getTime("extOn", "extOnUnit");
+    const validOff = Number.isInteger(offSec) && offSec >= 1 && offSec <= MAX_SEC;
+    const validOn = Number.isInteger(onSec) && onSec >= 1 && onSec <= MAX_SEC;
+    $("extOff").setAttribute("aria-invalid", !validOff);
+    $("extOn").setAttribute("aria-invalid", !validOn);
+    if (!validOff || !validOn) {
+      showMessage("Los tiempos deben ser números enteros entre 1 segundo y 24 horas.", "error", "ext-message");
+      return false;
+    }
+
+    $("ext-save").disabled = true;
+    try {
+      const res = await fetch("/extractor", {
+        method: "POST",
+        body: new URLSearchParams({ enabled: $("extEnabled").checked ? 1 : 0, offSec, onSec }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al guardar.");
+      extEnabledSaved = data.enabled;
+      showMessage("Guardado.", "ok", "ext-message");
+      update();
+      return true;
+    } catch (err) {
+      showMessage(errorText(err), "error", "ext-message");
+      return false;
+    } finally {
+      $("ext-save").disabled = false;
+    }
+  }
+
+  $("ext-times").addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveExtractor();
+  });
+
+  // El interruptor guarda al instante; si falla, vuelve a su posición anterior
+  $("extEnabled").addEventListener("change", async () => {
+    if (!(await saveExtractor())) $("extEnabled").checked = extEnabledSaved;
+  });
+
+  // Controles por rango (humedad y calefacción): interruptor + mínimo/máximo con histéresis en el ESP32
+  function rangeControl({ prefix, url, minParam, maxParam, lo, hi, invalidText }) {
+    const ctl = { enabled: false };
+    const minEl = $(prefix + "-min");
+    const maxEl = $(prefix + "-max");
+    const toggle = $(prefix + "-enabled");
+    const msg = prefix + "-message";
+
+    ctl.load = async () => {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        const cfg = await res.json();
+        ctl.enabled = cfg.enabled;
+        toggle.checked = cfg.enabled;
+        minEl.value = cfg[minParam];
+        maxEl.value = cfg[maxParam];
+      } catch {
+        showMessage("No se pudo cargar la configuración.", "error", msg);
+      }
+    };
+
+    async function save() {
+      const min = Number(minEl.value);
+      const max = Number(maxEl.value);
+      const valid = minEl.value !== "" && maxEl.value !== "" && min >= lo && max <= hi && min < max;
+      minEl.setAttribute("aria-invalid", !valid);
+      maxEl.setAttribute("aria-invalid", !valid);
+      if (!valid) {
+        showMessage(invalidText, "error", msg);
+        return false;
+      }
+
+      $(prefix + "-save").disabled = true;
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          body: new URLSearchParams({ enabled: toggle.checked ? 1 : 0, [minParam]: min, [maxParam]: max }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Error al guardar.");
+        ctl.enabled = data.enabled;
+        showMessage("Guardado.", "ok", msg);
+        update();
+        return true;
+      } catch (err) {
+        showMessage(errorText(err), "error", msg);
+        return false;
+      } finally {
+        $(prefix + "-save").disabled = false;
+      }
+    }
+
+    $(prefix + "-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      save();
+    });
+
+    // El interruptor guarda al instante; si falla, vuelve a su posición anterior
+    toggle.addEventListener("change", async () => {
+      if (!(await save())) toggle.checked = ctl.enabled;
+    });
+
+    return ctl;
+  }
+
+  const humidity = rangeControl({
+    prefix: "hum", url: "/config", minParam: "humMin", maxParam: "humMax", lo: 0, hi: 100,
+    invalidText: "El mínimo debe ser menor que el máximo (0 a 100).",
+  });
+
+  const heating = rangeControl({
+    prefix: "heat", url: "/heater", minParam: "tempMin", maxParam: "tempMax", lo: 0, hi: 50,
+    invalidText: "La mínima debe ser menor que la máxima (0 a 50 °C).",
+  });
+
+  function renderSensors(data) {
+    document.body.classList.toggle("sensor-error", !data.ok);
+    $("temperature").textContent = data.ok ? fmt(data.temperature) : "—";
+    $("humidity").textContent = data.ok ? fmt(data.humidity) : "—";
+    $("checked").textContent = new Date().toLocaleTimeString("es-AR");
+    renderDeviceBadge("hum-badge", humidity.enabled, data.humidifier);
+    renderDeviceBadge("heat-badge", heating.enabled, data.heater);
+    renderExtractor(data.extractor, data.extractorRemaining ?? null);
+  }
+
+  async function update() {
+    try {
+      const res = await fetch("/sensors", { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      renderSensors(await res.json());
+      renderOnline(true);
+    } catch {
+      renderOnline(false);
+    }
+  }
+
+  Promise.all([humidity.load(), heating.load(), loadExtractor()]).then(update);
+  setInterval(update, 5000);
+</script>
+</body>
+</html>
