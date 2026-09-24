@@ -715,6 +715,8 @@
           <span class="title">Calefacción · historial</span>
           <div class="header-actions">
             <div class="range-buttons" role="group" aria-label="Período">
+              <button type="button" class="secondary" data-range="1h">1 h</button>
+              <button type="button" class="secondary" data-range="2h">2 h</button>
               <button type="button" class="secondary" data-range="6h">6 h</button>
               <button type="button" class="secondary" data-range="24h">24 h</button>
               <button type="button" class="secondary" data-range="7d">7 d</button>
@@ -1322,7 +1324,7 @@
 
   // ---- Gráficos (historial desde InfluxDB, vía el ESP32) ----
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const RANGE_MS = { "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 24 * 3600e3 };
+  const RANGE_MS = { "1h": 3600e3, "2h": 2 * 3600e3, "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 24 * 3600e3 };
   let heatRange = "24h";
   try { heatRange = localStorage.getItem("heatRange") || heatRange; } catch {}
   if (!RANGE_MS[heatRange]) heatRange = "24h";
@@ -1371,7 +1373,7 @@
 
   function formatTick(d, range) {
     if (range === "7d") return pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1);
-    return pad2(d.getHours()) + ":00";
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
   }
 
   // Barras en el tiempo, pintadas según si el aparato estuvo prendido en esa ventana. Un solo eje Y.
@@ -1412,14 +1414,23 @@
     }
 
     // Eje X: marcas en horas redondas (o días en 7 d), sin que se amontonen
-    const unitMs = range === "7d" ? 86400e3 : 3600e3;  // días en 7 d, horas en el resto
-    let stepUnits = range === "6h" ? 1 : range === "24h" ? 4 : 1;
+    // Unidad de las marcas: 10 min (1 h), 15 min (2 h), horas (6 h y 24 h) o días (7 d)
+    const unitMin = { "1h": 10, "2h": 15, "6h": 60, "24h": 60, "7d": 1440 }[range];
+    const unitMs = unitMin * 60000;
+    let stepUnits = range === "24h" ? 4 : 1;
     while ((stepUnits * unitMs / (end - start)) * plotW < 48) stepUnits *= 2;  // que no se amontonen
     const first = new Date(start);
-    if (range === "7d") first.setHours(24, 0, 0, 0); else first.setMinutes(60, 0, 0);
+    if (range === "7d") {
+      first.setHours(24, 0, 0, 0);
+    } else {
+      first.setSeconds(0, 0);
+      first.setMinutes(Math.ceil((first.getMinutes() + 1) / unitMin) * unitMin);
+    }
     for (let t = first.getTime(); t < end; t += unitMs) {
       const d = new Date(t);
-      const index = range === "7d" ? Math.round((t - first.getTime()) / unitMs) : d.getHours();
+      const index = range === "7d"
+        ? Math.round((t - first.getTime()) / unitMs)
+        : Math.round((d.getHours() * 60 + d.getMinutes()) / unitMin);
       if (index % stepUnits) continue;
       svg.append(svgEl("text", { class: "axis-label", x: x(t), y: height - 6, "text-anchor": "middle" }, formatTick(d, range)));
     }

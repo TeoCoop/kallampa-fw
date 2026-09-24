@@ -143,12 +143,12 @@ from(bucket: "cultivo")
 
 ## Gráficos
 
-La tarjeta **Calefacción · historial** (debajo de la de Calefacción) muestra la temperatura de las últimas **6 h, 24 h o 7 días** en barras:
+La tarjeta **Calefacción · historial** (debajo de la de Calefacción) muestra la temperatura de la última **1 h, 2 h, 6 h, 24 h o 7 días** en barras:
 
 - **Barra azul:** en esa ventana la calefacción estuvo prendida. **Barra gris:** estuvo apagada.
 - Las líneas punteadas son la mínima y la máxima configuradas.
 - Pasando el mouse (o tocando) una barra se ve la hora, la temperatura promedio y cuántos minutos estuvo prendida.
-- Cada barra es una ventana de 1 min (6 h), 5 min (24 h) o 30 min (7 d), o el intervalo de muestreo si es mayor.
+- Cada barra es una ventana de 1 min (1 h, 2 h y 6 h), 5 min (24 h) o 30 min (7 d), o el intervalo de muestreo si es mayor. Para ver bien 1 h y 2 h conviene muestrear cada 1 min (con 5 min, 1 h son solo 12 barras).
 
 Debajo, la **tabla de ciclos** (un ciclo = una racha de calefacción prendida), para entender cuánto calienta y cuánto mantiene:
 
@@ -186,7 +186,7 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 | `GET /logs?since=<seq>` | Registro: `{"now":123456,"last":42,"entries":[{"seq":42,"ms":120000,"repeat":1,"text":"Extractor ENCENDIDO"}]}` con los mensajes posteriores a `since` (`now` y `ms` son milisegundos desde el arranque) |
 | `GET /history-config` | Historial: `{"enabled":true,"url":"…","org":"…","bucket":"…","tokenSet":true,"intervalMin":5,"pending":0,"lastOk":1760000000,"lastError":""}` (el token nunca se devuelve) |
 | `POST /history-config` | Parámetros de formulario `enabled` (`1`/`0`), `url`, `org`, `bucket`, `token` (vacío = mantener el guardado) e `interval` (minutos, 1–60); 400 si no es válida |
-| `GET /history?range=6h\|24h\|7d` | CSV de InfluxDB con `_time`, `temperatura` (promedio) y `calefaccion_seg` (suma) por ventana; el header `X-Window-Min` indica el tamaño de la ventana. 409 si el historial no está configurado, 502 si InfluxDB responde error |
+| `GET /history?range=1h\|2h\|6h\|24h\|7d` | CSV de InfluxDB con `_time`, `temperatura` (promedio) y `calefaccion_seg` (suma) por ventana; el header `X-Window-Min` indica el tamaño de la ventana. 409 si el historial no está configurado, 502 si InfluxDB responde error |
 | `POST /history-test` | Toma una muestra y la envía ya; responde el estado o `{"error":"…"}` con el motivo |
 | `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
 | `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"retrying":false,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`ok`: hay una lectura válida de hace menos de 2 min; `retrying`: la última lectura falló y se usa la anterior; `extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado). Permite lecturas desde otros equipos (CORS) |

@@ -784,7 +784,7 @@ void handleHistory() {
   String range = server.arg("range");
   // Ventana "redonda" para que queden como mucho ~360 barras, nunca menor al intervalo de muestreo
   uint16_t stepMin;
-  if (range == "6h") stepMin = 1;
+  if (range == "1h" || range == "2h" || range == "6h") stepMin = 1;
   else if (range == "7d") stepMin = 30;
   else {
     range = "24h";
