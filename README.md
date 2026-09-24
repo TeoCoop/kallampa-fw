@@ -80,6 +80,17 @@ Se pueden tener varios equipos andando en la misma WiFi:
 - La tarjeta **Dispositivos**, arriba de todo, muestra todos los controladores de la red con su temperatura, humedad y qué aparatos tienen prendidos (HUM, CAL, EXT). Cada nombre es un link a su panel. Los equipos se encuentran solos por mDNS; uno nuevo puede tardar hasta 30 s en aparecer.
 - Cada equipo se configura desde su propio panel.
 
+## Registro
+
+La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes del equipo, los mismos que salen por el monitor serie: arranque, conexión WiFi, cambios de configuración, cuándo se prenden y apagan los aparatos y errores del sensor. Se actualiza cada 5 s.
+
+- El primer mensaje indica el **motivo del último reinicio** (corte de luz, cuelgue, caída de tensión, etc.).
+- Los mensajes repetidos seguidos se agrupan con un contador (por ejemplo `Error leyendo el DHT22 (t=nan h=nan) ×37`).
+- Los errores se ven en naranja.
+- **Pausar** congela la lista para leer tranquilo; **Copiar** copia todo el registro al portapapeles.
+- Se guardan en RAM, así que **se borran al reiniciar** el ESP32.
+- Los mensajes internos de WiFiManager (`*wm:...`) solo se ven por el monitor serie.
+
 ## Endpoints
 
 | Ruta | Respuesta |
@@ -88,6 +99,7 @@ Se pueden tener varios equipos andando en la misma WiFi:
 | `/status` | `{"status":"OK"}` |
 | `GET /device` | Este equipo: `{"id":"a1b2c3","name":"carpa-1","ip":"192.168.1.142"}` |
 | `POST /device` | Parámetro de formulario `name`; cambia el nombre (400 si no es válido) |
+| `GET /logs?since=<seq>` | Registro: `{"now":123456,"last":42,"entries":[{"seq":42,"ms":120000,"repeat":1,"text":"Extractor ENCENDIDO"}]}` con los mensajes posteriores a `since` (`now` y `ms` son milisegundos desde el arranque) |
 | `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
 | `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado). Permite lecturas desde otros equipos (CORS) |
 | `GET /config` | Control de humedad: `{"enabled":true,"humMin":85,"humMax":95}` |

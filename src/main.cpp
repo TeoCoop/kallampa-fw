@@ -7,6 +7,8 @@
 #include <Preferences.h>
 #include <vector>
 #include "mdns.h"
+#include "esp_system.h"
+#include <stdarg.h>
 
 static const char *AP_PASS = "12345678";
 static const int RESET_PIN = 0;  // Botón BOOT
@@ -21,6 +23,8 @@ static const unsigned long DISCOVERY_INTERVAL_MS = 30000;
 static const uint32_t DISCOVERY_TIMEOUT_MS = 3000;
 static const size_t MAX_PEERS = 20;
 static const uint8_t PEER_MAX_MISSED = 3;  // Búsquedas seguidas sin respuesta antes de sacarlo de la lista
+static const size_t LOG_SIZE = 100;       // Mensajes que se guardan en RAM para el panel
+static const size_t LOG_TEXT_LEN = 96;
 
 WebServer server(80);
 DHT dht(DHT_PIN, DHT22);
@@ -61,6 +65,55 @@ unsigned long phaseStartedAt = 0;
 
 unsigned long extractorPhaseMs();
 
+// ---- Registro: últimos mensajes en RAM (se pierden al reiniciar) ----
+struct LogEntry {
+  uint32_t seq;
+  uint32_t ms;
+  uint16_t repeat;
+  char text[LOG_TEXT_LEN];
+};
+LogEntry logBuffer[LOG_SIZE];
+uint32_t logSeq = 0;  // seq del último mensaje; el buffer guarda los últimos LOG_SIZE
+
+// Escribe por serial y guarda en el registro. Si se repite el último mensaje, solo suma al contador.
+void logMsg(const char *fmt, ...) {
+  char text[LOG_TEXT_LEN];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(text, sizeof(text), fmt, args);
+  va_end(args);
+  Serial.println(text);
+
+  if (logSeq > 0) {
+    LogEntry &last = logBuffer[(logSeq - 1) % LOG_SIZE];
+    if (strcmp(last.text, text) == 0) {
+      if (last.repeat < UINT16_MAX) last.repeat++;
+      last.ms = millis();
+      return;
+    }
+  }
+  LogEntry &entry = logBuffer[logSeq % LOG_SIZE];
+  entry.seq = ++logSeq;
+  entry.ms = millis();
+  entry.repeat = 1;
+  strncpy(entry.text, text, sizeof(entry.text));
+}
+
+const char *resetReasonText() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "encendido o corte de luz";
+    case ESP_RST_SW: return "reinicio por software";
+    case ESP_RST_PANIC: return "cuelgue (error del programa)";
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT: return "cuelgue (watchdog)";
+    case ESP_RST_BROWNOUT: return "caída de tensión (brownout)";
+    case ESP_RST_EXT: return "botón de reset";
+    case ESP_RST_DEEPSLEEP: return "salida de deep sleep";
+    default: return "desconocido";
+  }
+}
+
 extern const char index_html[] asm("_binary_web_index_html_start");
 
 void handleRoot() {
@@ -75,7 +128,7 @@ void setHumidifier(bool on) {
   if (on == humidifierOn) return;
   humidifierOn = on;
   digitalWrite(MOSFET_PIN, on ? HIGH : LOW);
-  Serial.println(on ? "Humidificador ENCENDIDO" : "Humidificador APAGADO");
+  logMsg(on ? "Humidificador ENCENDIDO" : "Humidificador APAGADO");
 }
 
 // Histéresis: enciende por debajo del mínimo, apaga al llegar al máximo
@@ -97,7 +150,7 @@ void setHeater(bool on) {
   if (on == heaterOn) return;
   heaterOn = on;
   setRelay(HEATER_PIN, on);
-  Serial.println(on ? "Calefacción ENCENDIDA" : "Calefacción APAGADA");
+  logMsg(on ? "Calefacción ENCENDIDA" : "Calefacción APAGADA");
 }
 
 // Histéresis: enciende por debajo de la mínima, apaga al llegar a la máxima
@@ -122,7 +175,7 @@ void readSensor() {
     lastTemperature = t;
     lastHumidity = h;
   } else {
-    Serial.printf("Error leyendo el DHT22 (t=%.1f h=%.1f)\n", t, h);
+    logMsg("Error leyendo el DHT22 (t=%.1f h=%.1f)", t, h);
   }
   updateHumidifier();
   updateHeater();
@@ -140,13 +193,13 @@ bool isValidName(const String &name) {
 
 void startMdns() {
   if (!MDNS.begin(deviceName.c_str())) {
-    Serial.println("Error iniciando mDNS");
+    logMsg("Error iniciando mDNS");
     return;
   }
   MDNS.addService("http", "tcp", 80);
   MDNS.addService("fungi", "tcp", 80);
   MDNS.addServiceTxt("fungi", "tcp", "name", deviceName);
-  Serial.printf("Panel: http://%s.local\n", deviceName.c_str());
+  logMsg("Panel: http://%s.local", deviceName.c_str());
 }
 
 // Espera a que termine la búsqueda en curso (si la hay) y la libera
@@ -226,6 +279,22 @@ String deviceJson() {
          ",\"ip\":" + jsonString(WiFi.localIP().toString()) + "}";
 }
 
+void handleLogs() {
+  uint32_t since = server.hasArg("since") ? strtoul(server.arg("since").c_str(), nullptr, 10) : 0;
+  uint32_t oldest = logSeq > LOG_SIZE ? logSeq - LOG_SIZE + 1 : 1;
+  uint32_t from = max(since + 1, oldest);
+
+  String json = "{\"now\":" + String(millis()) + ",\"last\":" + String(logSeq) + ",\"entries\":[";
+  for (uint32_t seq = from; seq <= logSeq; seq++) {
+    const LogEntry &e = logBuffer[(seq - 1) % LOG_SIZE];
+    if (seq != from) json += ",";
+    json += "{\"seq\":" + String(e.seq) + ",\"ms\":" + String(e.ms) +
+            ",\"repeat\":" + String(e.repeat) + ",\"text\":" + jsonString(e.text) + "}";
+  }
+  json += "]}";
+  server.send(200, "application/json", json);
+}
+
 void handleGetDevice() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.send(200, "application/json", deviceJson());
@@ -241,7 +310,7 @@ void handlePostDevice() {
   if (name != deviceName) {
     deviceName = name;
     prefs.putString("name", deviceName);
-    Serial.printf("Nuevo nombre: %s\n", deviceName.c_str());
+    logMsg("Nuevo nombre: %s", deviceName.c_str());
     cancelDiscovery();
     MDNS.end();
     startMdns();
@@ -316,7 +385,7 @@ void handlePostConfig() {
   humMax = newMax;
   prefs.putInt("humMin", humMin);
   prefs.putInt("humMax", humMax);
-  Serial.printf("Humedad: activo=%d humMin=%d humMax=%d\n", humEnabled, humMin, humMax);
+  logMsg("Humedad: activo=%d humMin=%d humMax=%d", humEnabled, humMin, humMax);
   // Con la config nueva se decide desde cero: solo queda encendido si está por debajo del mínimo
   setHumidifier(humEnabled && lastReadOk && lastHumidity < humMin);
   server.send(200, "application/json", configJson());
@@ -349,7 +418,7 @@ void handlePostHeater() {
   prefs.putBool("heatEn", heatEnabled);
   prefs.putFloat("tempMin", tempMin);
   prefs.putFloat("tempMax", tempMax);
-  Serial.printf("Calefacción: activo=%d tempMin=%.1f tempMax=%.1f\n", heatEnabled, tempMin, tempMax);
+  logMsg("Calefacción: activo=%d tempMin=%.1f tempMax=%.1f", heatEnabled, tempMin, tempMax);
   // Con la config nueva se decide desde cero: solo queda encendida si está por debajo de la mínima
   setHeater(heatEnabled && lastReadOk && lastTemperature < tempMin);
   server.send(200, "application/json", heaterJson());
@@ -359,7 +428,7 @@ void setExtractor(bool on) {
   extractorOn = on;
   phaseStartedAt = millis();
   setRelay(EXTRACTOR_PIN, on);
-  Serial.println(on ? "Extractor ENCENDIDO" : "Extractor APAGADO");
+  logMsg(on ? "Extractor ENCENDIDO" : "Extractor APAGADO");
 }
 
 // El ciclo arranca siempre con la fase encendida
@@ -405,7 +474,7 @@ void handlePostExtractor() {
   prefs.putBool("extEn", extEnabled);
   prefs.putULong("extOff", extOffSec);
   prefs.putULong("extOn", extOnSec);
-  Serial.printf("Extractor: activo=%d apagado=%lus encendido=%lus\n", extEnabled, extOffSec, extOnSec);
+  logMsg("Extractor: activo=%d apagado=%lus encendido=%lus", extEnabled, extOffSec, extOnSec);
   restartExtractorCycle();
   server.send(200, "application/json", extractorJson());
 }
@@ -430,7 +499,9 @@ void setup() {
   deviceId = id;
   deviceName = prefs.getString("name", "fungi-" + deviceId);
   if (!isValidName(deviceName)) deviceName = "fungi-" + deviceId;
-  Serial.printf("\nDispositivo: %s (id %s)\n", deviceName.c_str(), deviceId.c_str());
+  Serial.println();
+  logMsg("Inicio (motivo: %s)", resetReasonText());
+  logMsg("Dispositivo: %s (id %s)", deviceName.c_str(), deviceId.c_str());
   humEnabled = prefs.getBool("humEn", humEnabled);
   humMin = prefs.getInt("humMin", humMin);
   humMax = prefs.getInt("humMax", humMax);
@@ -447,7 +518,7 @@ void setup() {
 
   // Mantener BOOT presionado al arrancar borra las credenciales guardadas
   if (digitalRead(RESET_PIN) == LOW) {
-    Serial.println("Borrando credenciales WiFi...");
+    logMsg("Borrando credenciales WiFi...");
     wm.resetSettings();
   }
 
@@ -456,13 +527,13 @@ void setup() {
   wm.setConnectTimeout(15);  // segundos por intento
   wm.setConfigPortalTimeout(180);
   WiFi.setHostname(deviceName.c_str());
+  logMsg("Conectando a la WiFi guardada...");
   if (!wm.autoConnect(deviceName.c_str(), AP_PASS)) {
-    Serial.println("No se pudo conectar, reiniciando...");
+    logMsg("No se pudo conectar, reiniciando...");
     ESP.restart();
   }
 
-  Serial.print("Conectado. IP: ");
-  Serial.println(WiFi.localIP());
+  logMsg("Conectado a %s. IP: %s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 
   startMdns();
 
@@ -472,6 +543,7 @@ void setup() {
   server.on("/device", HTTP_GET, handleGetDevice);
   server.on("/device", HTTP_POST, handlePostDevice);
   server.on("/devices", HTTP_GET, handleGetDevices);
+  server.on("/logs", HTTP_GET, handleLogs);
   server.on("/config", HTTP_GET, handleGetConfig);
   server.on("/config", HTTP_POST, handlePostConfig);
   server.on("/heater", HTTP_GET, handleGetHeater);

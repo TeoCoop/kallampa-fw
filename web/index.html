@@ -403,6 +403,44 @@
 
   button:hover { opacity: 0.9; }
   button:disabled { opacity: 0.5; cursor: default; }
+
+  button.secondary {
+    height: 28px;
+    padding: 0 10px;
+    background: var(--muted);
+    color: var(--foreground);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .log {
+    height: 260px;
+    overflow-y: auto;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) * 0.8);
+    background: color-mix(in srgb, var(--muted) 50%, transparent);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .log-line {
+    display: flex;
+    gap: 10px;
+  }
+
+  .log-time { flex-shrink: 0; color: var(--muted-foreground); }
+  .log-text { min-width: 0; overflow-wrap: anywhere; color: var(--foreground); }
+  .log-line.error .log-text { color: var(--err); }
+  .log-repeat { flex-shrink: 0; color: var(--muted-foreground); }
+  .log-empty { color: var(--muted-foreground); }
   button:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent); }
 
   .message {
@@ -606,6 +644,19 @@
           <button type="submit" id="device-save">Guardar</button>
         </form>
         <p class="message" id="device-message" role="status"></p>
+      </section>
+      <section class="card control">
+        <div class="card-header">
+          <span class="title">Registro</span>
+          <div class="header-actions">
+            <span class="badge off" id="log-count">0</span>
+            <button type="button" class="secondary" id="log-copy">Copiar</button>
+            <button type="button" class="secondary" id="log-pause">Pausar</button>
+          </div>
+        </div>
+        <p class="help">Últimos mensajes del equipo. Se borran al reiniciar; el primero indica el motivo del último reinicio.</p>
+        <div class="log" id="log" role="log" aria-live="off"><span class="log-empty">Cargando…</span></div>
+        <p class="message" id="log-message" role="status"></p>
       </section>
     </div>
   </main>
@@ -970,8 +1021,80 @@
     }
   }
 
+  // ---- Registro ----
+  const LOG_MAX = 300;
+  let logEntries = [];  // { seq, time (Date), text, repeat }
+  let logPaused = false;
+
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const formatTime = (d) => pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+
+  async function loadLogs() {
+    if (logPaused) return;
+    // Se pide también el último que ya tenemos, porque su contador de repeticiones puede haber subido
+    const lastSeq = logEntries.length ? logEntries[logEntries.length - 1].seq : 0;
+    try {
+      let res = await fetch("/logs?since=" + Math.max(0, lastSeq - 1), { cache: "no-store" });
+      let data = await res.json();
+      // Si el equipo se reinició, los seq vuelven a empezar: se descarta lo viejo y se pide todo
+      if (data.last < lastSeq) {
+        logEntries = [];
+        res = await fetch("/logs?since=0", { cache: "no-store" });
+        data = await res.json();
+      }
+      const receivedAt = Date.now();
+      for (const e of data.entries) {
+        const entry = { seq: e.seq, time: new Date(receivedAt - (data.now - e.ms)), text: e.text, repeat: e.repeat };
+        const existing = logEntries.findIndex((x) => x.seq === e.seq);
+        if (existing >= 0) logEntries[existing] = entry;
+        else logEntries.push(entry);
+      }
+      logEntries = logEntries.slice(-LOG_MAX);
+      renderLogs();
+    } catch {
+      // Se reintenta en la próxima vuelta
+    }
+  }
+
+  function renderLogs() {
+    const box = $("log");
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+    box.replaceChildren();
+    if (!logEntries.length) {
+      box.append(el("span", "log-empty", "Sin mensajes todavía."));
+    }
+    for (const e of logEntries) {
+      const line = el("div", "log-line" + (/error/i.test(e.text) ? " error" : ""));
+      line.append(el("span", "log-time", formatTime(e.time)), el("span", "log-text", e.text));
+      if (e.repeat > 1) line.append(el("span", "log-repeat", "×" + e.repeat));
+      box.append(line);
+    }
+    $("log-count").textContent = logEntries.length;
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  $("log-pause").addEventListener("click", () => {
+    logPaused = !logPaused;
+    $("log-pause").textContent = logPaused ? "Reanudar" : "Pausar";
+    if (!logPaused) loadLogs();
+  });
+
+  $("log-copy").addEventListener("click", async () => {
+    const text = logEntries
+      .map((e) => formatTime(e.time) + "  " + e.text + (e.repeat > 1 ? "  ×" + e.repeat : ""))
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      showMessage("Registro copiado.", "ok", "log-message");
+    } catch {
+      showMessage("No se pudo copiar (el navegador lo bloqueó).", "error", "log-message");
+    }
+  });
+
   Promise.all([loadDevice(), humidity.load(), heating.load(), loadExtractor()]).then(update).then(loadDevices);
+  loadLogs().then(() => { $("log").scrollTop = $("log").scrollHeight; });
   setInterval(() => update().then(updatePeers), 5000);
+  setInterval(loadLogs, 5000);
   setInterval(loadDevices, 30000);
 </script>
 </body>
