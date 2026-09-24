@@ -610,7 +610,7 @@ String influxError(HTTPClient &http, int code) {
     int end = detail.indexOf('"', start);
     detail = detail.substring(start, end > start ? end : detail.length());
   }
-  if (detail.length() > 80) detail = detail.substring(0, 80);
+  if (detail.length() > 160) detail = detail.substring(0, 160);
   return code > 0 ? "error " + String(code) + ": " + detail : detail;
 }
 
@@ -781,6 +781,8 @@ void handleHistory() {
       "h = base\n"
       "  |> filter(fn: (r) => r._measurement == \"actuadores\" and r._field == \"calefaccion_seg\")\n"
       "  |> aggregateWindow(every: " + every + ", fn: sum, createEmpty: false, timeSrc: \"_start\")\n"
+      // Los segundos son enteros y la temperatura no: sin esto el pivot choca por tipos distintos en _value
+      "  |> toFloat()\n"
       "union(tables: [t, h])\n"
       "  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n"
       "  |> group()\n"
