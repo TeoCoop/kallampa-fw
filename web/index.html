@@ -932,7 +932,8 @@
   function renderDevice() {
     $("device-name").textContent = device.name;
     document.title = device.name;
-    $("device-info").textContent = "Dirección: http://" + device.name + ".local · IP " + device.ip;
+    $("device-info").textContent = "Dirección: http://" + device.name + ".local · IP " + device.ip
+      + (device.version ? " · Versión " + device.version : "");
   }
 
   async function loadDevice() {

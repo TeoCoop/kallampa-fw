@@ -71,6 +71,23 @@ Desde la página se configura un ciclo que alterna **tiempo apagado** y **tiempo
 
 Si al arrancar no logra conectarse a la red guardada (por ejemplo, después de un corte de luz, cuando el router todavía no volvió), lo reintenta 3 veces de hasta 15 s cada una. Si falla las 3 veces, abre el portal (con el nombre del equipo) durante 3 minutos y después se reinicia para volver a intentar.
 
+## Actualizar por WiFi (OTA)
+
+Después de la primera carga por USB, las versiones nuevas se pueden subir por WiFi desde la PC:
+
+```
+./upload-ota.sh carpa-1 carpa-2          # a esos equipos (nombre o IP)
+./upload-ota.sh                          # busca los controladores de la red y pregunta antes de subir
+```
+
+- Compila una sola vez y sube a cada equipo en orden; al final muestra un resumen (OK / ERROR por equipo). Si uno falla, sigue con el siguiente.
+- La PC tiene que estar en la misma WiFi y el equipo prendido. Sin argumentos, busca los equipos por mDNS (`avahi-browse`, si está instalado) o preguntando a cada IP de la red local.
+- Durante la actualización (30–60 s) se **apagan el humidificador, la calefacción y el extractor**; al terminar el equipo se reinicia y vuelve a controlar solo. En el Registro aparece "Inicio (motivo: reinicio por software)".
+- Si la actualización falla, el equipo sigue con la versión anterior.
+- La versión que corre cada equipo (hash de git y fecha de compilación) se ve en la tarjeta **Dispositivo** del panel.
+- **Sin clave:** cualquiera en la misma WiFi podría subirle un firmware. Usarlo solo en redes de confianza.
+- **Importante:** para tener lugar para dos versiones del programa se usa la tabla de particiones `min_spiffs.csv`. Los equipos que tenían un firmware anterior a este cambio necesitan **una última carga por USB** (`./upload-and-monitor.sh`); la WiFi y la configuración guardadas se conservan. `upload-and-monitor.sh` sigue sirviendo para emergencias.
+
 ## Varios controladores
 
 Se pueden tener varios equipos andando en la misma WiFi:
@@ -141,7 +158,7 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 |---|---|
 | `/` | Página con temperatura y humedad en vivo |
 | `/status` | `{"status":"OK"}` |
-| `GET /device` | Este equipo: `{"id":"a1b2c3","name":"carpa-1","ip":"192.168.1.142"}` |
+| `GET /device` | Este equipo: `{"id":"a1b2c3","name":"carpa-1","version":"039601a 2026-09-24 13:43","ip":"192.168.1.142"}` |
 | `POST /device` | Parámetro de formulario `name`; cambia el nombre (400 si no es válido) |
 | `GET /logs?since=<seq>` | Registro: `{"now":123456,"last":42,"entries":[{"seq":42,"ms":120000,"repeat":1,"text":"Extractor ENCENDIDO"}]}` con los mensajes posteriores a `since` (`now` y `ms` son milisegundos desde el arranque) |
 | `GET /history-config` | Historial: `{"enabled":true,"url":"…","org":"…","bucket":"…","tokenSet":true,"pending":0,"lastOk":1760000000,"lastError":""}` (el token nunca se devuelve) |

@@ -12,6 +12,11 @@
 #include <time.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <ArduinoOTA.h>
+
+#ifndef FW_VERSION
+#define FW_VERSION "desconocida"
+#endif
 
 static const char *AP_PASS = "12345678";
 static const int RESET_PIN = 0;  // Botón BOOT
@@ -227,6 +232,7 @@ void startMdns() {
   MDNS.addService("http", "tcp", 80);
   MDNS.addService("fungi", "tcp", 80);
   MDNS.addServiceTxt("fungi", "tcp", "name", deviceName);
+  MDNS.enableArduino(3232, false);  // Destino para actualizar por WiFi (OTA)
   logMsg("Panel: http://%s.local", deviceName.c_str());
 }
 
@@ -312,6 +318,7 @@ String jsonString(const String &value) {
 String deviceJson() {
   return "{\"id\":" + jsonString(deviceId) +
          ",\"name\":" + jsonString(deviceName) +
+         ",\"version\":" + jsonString(FW_VERSION) +
          ",\"ip\":" + jsonString(WiFi.localIP().toString()) + "}";
 }
 
@@ -720,6 +727,34 @@ void handleHistoryTest() {
   }
 }
 
+// Actualización por WiFi desde la PC (./upload-ota.sh). Sin clave: la red es de confianza.
+void startOta() {
+  ArduinoOTA.setHostname(deviceName.c_str());
+  ArduinoOTA.setMdnsEnabled(false);  // mDNS lo maneja startMdns()
+  ArduinoOTA.onStart([]() {
+    // Durante la actualización el loop no corre: se apagan todos los aparatos por seguridad
+    setHumidifier(false);
+    setHeater(false);
+    extractorOn = false;
+    setRelay(EXTRACTOR_PIN, false);
+    logMsg("Actualización OTA iniciada");
+  });
+  ArduinoOTA.onEnd([]() {
+    logMsg("Actualización OTA completa, reiniciando");
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    const char *reason = error == OTA_AUTH_ERROR ? "autenticación"
+                       : error == OTA_BEGIN_ERROR ? "no hay espacio o partición inválida"
+                       : error == OTA_CONNECT_ERROR ? "conexión"
+                       : error == OTA_RECEIVE_ERROR ? "recepción"
+                       : error == OTA_END_ERROR ? "verificación final"
+                       : "desconocido";
+    logMsg("Error en actualización OTA (%s); sigue la versión anterior", reason);
+    restartExtractorCycle();
+  });
+  ArduinoOTA.begin();
+}
+
 void setup() {
   pinMode(MOSFET_PIN, OUTPUT);
   digitalWrite(MOSFET_PIN, LOW);
@@ -742,7 +777,7 @@ void setup() {
   if (!isValidName(deviceName)) deviceName = "fungi-" + deviceId;
   Serial.println();
   logMsg("Inicio (motivo: %s)", resetReasonText());
-  logMsg("Dispositivo: %s (id %s)", deviceName.c_str(), deviceId.c_str());
+  logMsg("Dispositivo: %s (id %s) · versión %s", deviceName.c_str(), deviceId.c_str(), FW_VERSION);
   humEnabled = prefs.getBool("humEn", humEnabled);
   humMin = prefs.getInt("humMin", humMin);
   humMax = prefs.getInt("humMax", humMax);
@@ -783,6 +818,7 @@ void setup() {
   configTime(0, 0, "pool.ntp.org", "time.google.com");  // UTC; el historial guarda epoch
 
   startMdns();
+  startOta();
 
   server.on("/", handleRoot);
   server.on("/status", handleStatus);
@@ -806,6 +842,7 @@ void setup() {
 }
 
 void loop() {
+  ArduinoOTA.handle();
   server.handleClient();
 
   if (millis() - lastReadAt >= DHT_INTERVAL_MS) {
