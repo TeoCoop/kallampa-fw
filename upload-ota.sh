@@ -26,7 +26,7 @@ else
       [ "$proto" = "IPv4" ] || continue
       hosts+=("$ip")
       labels+=("$name ($ip)")
-    done < <(avahi-browse -rtp _fungi._tcp 2>/dev/null | grep '^=' | sort -u -t';' -k8,8)
+    done < <(avahi-browse -rtp _kallampa._tcp 2>/dev/null | grep '^=' | sort -u -t';' -k8,8)
   else
     # Sin avahi-utils: se pregunta /device a cada IP de la red local (/24)
     base=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}' | cut -d. -f1-3)

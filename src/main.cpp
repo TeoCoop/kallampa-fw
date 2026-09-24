@@ -478,8 +478,8 @@ void startMdns() {
     return;
   }
   MDNS.addService("http", "tcp", 80);
-  MDNS.addService("fungi", "tcp", 80);
-  MDNS.addServiceTxt("fungi", "tcp", "name", deviceName);
+  MDNS.addService("kallampa", "tcp", 80);
+  MDNS.addServiceTxt("kallampa", "tcp", "name", deviceName);
   MDNS.enableArduino(3232, false);  // Destino para actualizar por WiFi (OTA)
   logMsg("Panel: http://%s.local", deviceName.c_str());
 }
@@ -529,7 +529,7 @@ void mergeDiscoveryResults(mdns_result_t *results) {
   }
 }
 
-// Busca otros controladores (_fungi._tcp) en segundo plano, sin bloquear el loop
+// Busca otros controladores (_kallampa._tcp) en segundo plano, sin bloquear el loop
 void updateDiscovery() {
   if (discovery) {
     mdns_result_t *results = nullptr;
@@ -542,7 +542,7 @@ void updateDiscovery() {
   }
   if (lastDiscoveryAt != 0 && millis() - lastDiscoveryAt < DISCOVERY_INTERVAL_MS) return;
   lastDiscoveryAt = millis();
-  discovery = mdns_query_async_new(NULL, "_fungi", "_tcp", MDNS_TYPE_PTR, DISCOVERY_TIMEOUT_MS, MAX_PEERS, NULL);
+  discovery = mdns_query_async_new(NULL, "_kallampa", "_tcp", MDNS_TYPE_PTR, DISCOVERY_TIMEOUT_MS, MAX_PEERS, NULL);
 }
 
 String jsonString(const String &value) {
@@ -1174,8 +1174,8 @@ void setup() {
   char id[7];
   snprintf(id, sizeof(id), "%02x%02x%02x", mac[3], mac[4], mac[5]);
   deviceId = id;
-  deviceName = prefs.getString("name", "fungi-" + deviceId);
-  if (!isValidName(deviceName)) deviceName = "fungi-" + deviceId;
+  deviceName = prefs.getString("name", "kallampa-" + deviceId);
+  if (!isValidName(deviceName)) deviceName = "kallampa-" + deviceId;
   Serial.println();
   logMsg("Inicio (motivo: %s)", resetReasonText());
   logMsg("Dispositivo: %s (id %s) · versión %s", deviceName.c_str(), deviceId.c_str(), FW_VERSION);

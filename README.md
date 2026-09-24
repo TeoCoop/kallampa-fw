@@ -1,6 +1,6 @@
-# fungi-controller
+# Kallampa
 
-Controlador de fructificación basado en ESP32 DevKit (PlatformIO + Arduino).
+Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (PlatformIO + Arduino).
 
 ## Conexiones
 
@@ -70,9 +70,9 @@ Desde la página se configura un ciclo que alterna **tiempo apagado** y **tiempo
    ```
    ./upload-and-monitor.sh
    ```
-2. En el monitor serie aparece el nombre del equipo, por ejemplo `Dispositivo: fungi-a1b2c3`. Conectarse a la red WiFi con ese nombre (clave `12345678`). Se abre el portal de configuración; si no, entrar a `http://192.168.4.1`.
+2. En el monitor serie aparece el nombre del equipo, por ejemplo `Dispositivo: kallampa-a1b2c3`. Conectarse a la red WiFi con ese nombre (clave `12345678`). Se abre el portal de configuración; si no, entrar a `http://192.168.4.1`.
 3. Elegir la red WiFi de la casa e ingresar su clave.
-4. Abrir `http://fungi-a1b2c3.local/` (o la IP que aparece en el monitor serie).
+4. Abrir `http://kallampa-a1b2c3.local/` (o la IP que aparece en el monitor serie).
 
 Si al arrancar no logra conectarse a la red guardada (por ejemplo, después de un corte de luz, cuando el router todavía no volvió), lo reintenta 3 veces de hasta 15 s cada una. Si falla las 3 veces, abre el portal (con el nombre del equipo) durante 3 minutos y después se reinicia para volver a intentar.
 
@@ -97,10 +97,11 @@ Después de la primera carga por USB, las versiones nuevas se pueden subir por W
 
 Se pueden tener varios equipos andando en la misma WiFi:
 
-- Cada equipo arranca con un nombre único, `fungi-XXXXXX`, donde `XXXXXX` sale de la MAC del chip. Ese nombre es su dirección (`http://fungi-XXXXXX.local`) y el nombre de su red de configuración WiFi.
+- Cada equipo arranca con un nombre único, `kallampa-XXXXXX`, donde `XXXXXX` sale de la MAC del chip. Ese nombre es su dirección (`http://kallampa-XXXXXX.local`) y el nombre de su red de configuración WiFi.
 - Desde la tarjeta **Dispositivo** del panel se le puede poner otro nombre, por ejemplo `carpa-1` → `http://carpa-1.local`. Solo letras minúsculas, números y guiones (1 a 32). El cambio es inmediato y se guarda en el ESP32.
 - La tarjeta **Dispositivos**, arriba de todo, muestra todos los controladores de la red con su temperatura, humedad y qué aparatos tienen prendidos (HUM, CAL, EXT). Cada nombre es un link a su panel. Los equipos se encuentran solos por mDNS; uno nuevo puede tardar hasta 30 s en aparecer.
 - Cada equipo se configura desde su propio panel.
+- Los equipos se anuncian en la red con el servicio mDNS `_kallampa._tcp`. Los que tengan un firmware anterior al cambio de nombre (se llamaban `fungi-XXXXXX` y usaban `_fungi._tcp`) no aparecen en la lista hasta actualizarlos; al actualizarlos, si nunca se renombraron, pasan a llamarse `kallampa-XXXXXX` (los renombrados, como `carpa-1`, conservan su nombre).
 
 ## Historial (InfluxDB)
 

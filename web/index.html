@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>fungi-controller</title>
+<title>Kallampa</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍄</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -777,7 +777,7 @@
   <header>
     <div class="switcher">
       <button type="button" class="brand" id="device-switch" aria-haspopup="true" aria-expanded="false" aria-controls="device-menu">
-        🍄 <span id="device-name">fungi</span><span class="caret" aria-hidden="true">▾</span>
+        🍄 <span id="device-name">kallampa</span><span class="caret" aria-hidden="true">▾</span>
       </button>
       <div class="menu" id="device-menu" hidden>
         <div class="menu-title">Controladores en la red</div>
@@ -1320,7 +1320,7 @@
 
   function renderDevice() {
     $("device-name").textContent = device.name;
-    document.title = device.name;
+    document.title = device.name + " · Kallampa";
     $("device-info").textContent = "Dirección: http://" + device.name + ".local · IP " + device.ip
       + (device.version ? " · Versión " + device.version : "");
   }
