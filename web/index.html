@@ -43,6 +43,10 @@
     --shadow-soft: 0 1px 2px rgba(27, 32, 45, 0.06), 0 8px 24px rgba(27, 32, 45, 0.06);
     --font-sans: "Hanken Grotesk", system-ui, sans-serif;
     --font-mono: "Fira Code", ui-monospace, monospace;
+
+    /* Gráfico: prendida (acento) / apagada (gris de énfasis). Validados con validate_palette.js */
+    --chart-on: #0c5cfc;
+    --chart-off: #8b93a4;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -62,6 +66,8 @@
       --err-bg: rgba(252, 141, 50, 0.2);
       --err-fg: #fc8d32;
       --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+      --chart-on: #5b8ffc;
+      --chart-off: #5b6376;
     }
   }
 
@@ -120,6 +126,7 @@
 
   .card {
     display: flex;
+    min-width: 0;  /* Que el contenido ancho (tablas) scrollee adentro y no estire la grilla */
     flex-direction: column;
     gap: 14px;
     padding: 20px;
@@ -131,6 +138,7 @@
 
   .card-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
@@ -437,6 +445,92 @@
     .history-grid { grid-template-columns: 1fr; }
   }
 
+  .range-buttons {
+    display: flex;
+    gap: 4px;
+  }
+
+  button.secondary.active { background: var(--ok-bg); color: var(--ok-fg); }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .legend-swatch.on { background: var(--chart-on); }
+  .legend-swatch.off { background: var(--chart-off); }
+
+  .chart {
+    position: relative;
+    width: 100%;
+    min-height: 220px;
+  }
+
+  .chart svg { display: block; width: 100%; height: 220px; overflow: visible; }
+  .chart .grid-line { stroke: var(--border); stroke-width: 1; }
+  .chart .axis-label { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; }
+  .chart .bar-on { fill: var(--chart-on); }
+  .chart .bar-off { fill: var(--chart-off); }
+  .chart .ref-line { stroke: var(--foreground); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.7; }
+  .chart .ref-label { fill: var(--foreground); font-family: var(--font-mono); font-size: 10px; }
+  .chart .hover-col { fill: var(--foreground); opacity: 0.06; }
+
+  .chart-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 220px;
+    color: var(--muted-foreground);
+    text-align: center;
+  }
+
+  .tooltip {
+    position: absolute;
+    z-index: 2;
+    padding: 8px 10px;
+    border-radius: calc(var(--radius) * 0.6);
+    background: var(--card);
+    box-shadow: 0 0 0 1px var(--ring), var(--shadow-soft);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  .tooltip strong { color: var(--heading); font-variant-numeric: tabular-nums; }
+
+  .table-wrap { overflow-x: auto; }
+
+  table.cycles {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  table.cycles th {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted-foreground);
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  table.cycles td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    color: var(--foreground);
+    white-space: nowrap;
+  }
+
+  table.cycles tr.summary td { color: var(--heading); font-weight: 600; border-bottom: 0; }
+
   .log {
     height: 260px;
     overflow-y: auto;
@@ -613,6 +707,27 @@
       </section>
       <section class="card control">
         <div class="card-header">
+          <span class="title">Calefacción · historial</span>
+          <div class="header-actions">
+            <div class="range-buttons" role="group" aria-label="Período">
+              <button type="button" class="secondary" data-range="6h">6 h</button>
+              <button type="button" class="secondary" data-range="24h">24 h</button>
+              <button type="button" class="secondary" data-range="7d">7 d</button>
+            </div>
+            <button type="button" class="secondary" id="heat-chart-refresh" aria-label="Actualizar">↻</button>
+          </div>
+        </div>
+        <div class="legend">
+          <span class="legend-item"><span class="legend-swatch on"></span>Calefacción prendida</span>
+          <span class="legend-item"><span class="legend-swatch off"></span>Apagada</span>
+          <span class="legend-item">- - - mínima y máxima configuradas</span>
+        </div>
+        <div class="chart" id="heat-chart"><div class="chart-empty">Cargando…</div></div>
+        <div class="table-wrap" id="heat-cycles"></div>
+        <p class="help" id="heat-cycles-note"></p>
+      </section>
+      <section class="card control">
+        <div class="card-header">
           <span class="title">Extractor</span>
           <span class="badge off" id="extractor">DESACTIVADO</span>
         </div>
@@ -668,7 +783,7 @@
           <span class="title">Historial (InfluxDB)</span>
           <span class="badge off" id="hist-badge">DESACTIVADO</span>
         </div>
-        <p class="help">Temperatura y humedad cada 5 minutos, y el tiempo encendido del humidificador y la calefacción. La retención de 7 días se configura en el bucket.</p>
+        <p class="help">Temperatura y humedad cada tantos minutos (configurable), y el tiempo encendido del humidificador y la calefacción. La retención de 7 días se configura en el bucket.</p>
         <label class="switch">
           <input type="checkbox" id="hist-enabled">
           <span class="track"></span>
@@ -690,6 +805,10 @@
           <div class="field">
             <label for="hist-token">Token</label>
             <input id="hist-token" type="password" autocomplete="new-password" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="hist-interval">Cada (minutos)</label>
+            <input id="hist-interval" type="number" min="1" max="60" step="1" inputmode="numeric">
           </div>
         </form>
         <div class="form-actions">
@@ -863,6 +982,8 @@
         const res = await fetch(url, { cache: "no-store" });
         const cfg = await res.json();
         ctl.enabled = cfg.enabled;
+        ctl.min = cfg[minParam];
+        ctl.max = cfg[maxParam];
         toggle.checked = cfg.enabled;
         minEl.value = cfg[minParam];
         maxEl.value = cfg[maxParam];
@@ -891,6 +1012,9 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Error al guardar.");
         ctl.enabled = data.enabled;
+        ctl.min = data[minParam];
+        ctl.max = data[maxParam];
+        if (prefix === "heat") loadHeatChart();
         showMessage("Guardado.", "ok", msg);
         update();
         return true;
@@ -1109,6 +1233,7 @@
         $("hist-url").value = history.url;
         $("hist-org").value = history.org;
         $("hist-bucket").value = history.bucket;
+        $("hist-interval").value = history.intervalMin;
       }
       renderHistoryStatus();
     } catch {
@@ -1125,6 +1250,13 @@
       showMessage("La URL tiene que empezar con http:// o https://", "error", "hist-message");
       return false;
     }
+    const interval = Number($("hist-interval").value);
+    const intervalOk = Number.isInteger(interval) && interval >= 1 && interval <= 60;
+    $("hist-interval").setAttribute("aria-invalid", !intervalOk);
+    if (!intervalOk) {
+      showMessage("El intervalo tiene que ser de 1 a 60 minutos.", "error", "hist-message");
+      return false;
+    }
 
     $("hist-save").disabled = true;
     try {
@@ -1136,6 +1268,7 @@
           org: $("hist-org").value.trim(),
           bucket: $("hist-bucket").value.trim(),
           token: $("hist-token").value.trim(),
+          interval,
         }),
       });
       const data = await res.json();
@@ -1180,6 +1313,307 @@
       $("hist-test").disabled = false;
     }
   });
+
+  // ---- Gráficos (historial desde InfluxDB, vía el ESP32) ----
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const RANGE_MS = { "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 24 * 3600e3 };
+  let heatRange = "24h";
+  try { heatRange = localStorage.getItem("heatRange") || heatRange; } catch {}
+  if (!RANGE_MS[heatRange]) heatRange = "24h";
+  let heatData = null;  // { rows, windowSec, range, loadedAt }
+
+  function svgEl(tag, attrs, text) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  // CSV de InfluxDB (con encabezado, sin anotaciones) → [{ t: Date, temp: número|null, on: segundos }]
+  function parseInfluxCsv(text) {
+    const byTime = new Map();
+    let header = null;
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) { header = null; continue; }
+      const cols = line.split(",");
+      if (!header) { header = cols; continue; }
+      const get = (name) => { const i = header.indexOf(name); return i >= 0 ? cols[i] : ""; };
+      const time = get("_time");
+      if (!time) continue;
+      const row = byTime.get(time) || { t: new Date(time), temp: null, on: 0 };
+      if (get("temperatura") !== "") row.temp = Number(get("temperatura"));
+      if (get("calefaccion_seg") !== "") row.on = Number(get("calefaccion_seg"));
+      byTime.set(time, row);
+    }
+    return [...byTime.values()].sort((a, b) => a.t - b.t);
+  }
+
+  function niceStep(span) {
+    const raw = span / 4;
+    for (const step of [0.2, 0.5, 1, 2, 5, 10]) if (step >= raw) return step;
+    return 10;
+  }
+
+  const fmtNum = (n, d = 1) => n.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  function formatDuration(ms) {
+    const min = Math.round(ms / 60000);
+    if (min < 60) return min + " min";
+    const h = Math.floor(min / 60);
+    return h + " h" + (min % 60 ? " " + String(min % 60).padStart(2, "0") + " min" : "");
+  }
+
+  function formatTick(d, range) {
+    if (range === "7d") return pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1);
+    return pad2(d.getHours()) + ":00";
+  }
+
+  // Barras en el tiempo, pintadas según si el aparato estuvo prendido en esa ventana. Un solo eje Y.
+  function renderBarChart(container, { rows, windowSec, range, unit, refLines, onLabel }) {
+    container.replaceChildren();
+    const withValue = rows.filter((r) => r.temp !== null);
+    if (!withValue.length) {
+      container.append(el("div", "chart-empty", "Sin datos en este período."));
+      return;
+    }
+
+    const width = container.clientWidth || 600;
+    const height = 220;
+    const m = { top: 10, right: 44, bottom: 22, left: 34 };
+    const plotW = width - m.left - m.right;
+    const plotH = height - m.top - m.bottom;
+
+    const end = Date.now();
+    const start = end - RANGE_MS[range];
+    const values = withValue.map((r) => r.temp).concat(refLines.map((l) => l.value).filter((v) => v != null));
+    let lo = Math.min(...values) - 0.5;
+    let hi = Math.max(...values) + 0.5;
+    const step = niceStep(hi - lo);
+    lo = Math.floor(lo / step) * step;
+    hi = Math.ceil(hi / step) * step;
+
+    const x = (t) => m.left + ((t - start) / (end - start)) * plotW;
+    const y = (v) => m.top + (1 - (v - lo) / (hi - lo)) * plotH;
+
+    const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
+      "aria-label": "Temperatura en el tiempo; las barras azules son ventanas con la calefacción prendida" });
+
+    // Grilla y eje Y
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      svg.append(svgEl("line", { class: "grid-line", x1: m.left, x2: m.left + plotW, y1: y(v), y2: y(v) }));
+      svg.append(svgEl("text", { class: "axis-label", x: m.left - 6, y: y(v) + 3, "text-anchor": "end" },
+        fmtNum(v, step < 1 ? 1 : 0)));
+    }
+
+    // Eje X: marcas en horas redondas (o días en 7 d), sin que se amontonen
+    const unitMs = range === "7d" ? 86400e3 : 3600e3;  // días en 7 d, horas en el resto
+    let stepUnits = range === "6h" ? 1 : range === "24h" ? 4 : 1;
+    while ((stepUnits * unitMs / (end - start)) * plotW < 48) stepUnits *= 2;  // que no se amontonen
+    const first = new Date(start);
+    if (range === "7d") first.setHours(24, 0, 0, 0); else first.setMinutes(60, 0, 0);
+    for (let t = first.getTime(); t < end; t += unitMs) {
+      const d = new Date(t);
+      const index = range === "7d" ? Math.round((t - first.getTime()) / unitMs) : d.getHours();
+      if (index % stepUnits) continue;
+      svg.append(svgEl("text", { class: "axis-label", x: x(t), y: height - 6, "text-anchor": "middle" }, formatTick(d, range)));
+    }
+
+    // Barras (ancladas a la base, esquinas superiores apenas redondeadas, 2px de separación si entran)
+    const slotW = (windowSec * 1000 / (end - start)) * plotW;
+    const gap = slotW > 5 ? 2 : slotW > 2.5 ? 1 : 0;
+    const barW = Math.max(slotW - gap, 0.8);
+    const baseY = y(lo);
+    for (const r of withValue) {
+      const bx = x(r.t.getTime()) + gap / 2;
+      if (bx + barW < m.left || bx > m.left + plotW) continue;
+      const top = y(r.temp);
+      const h = Math.max(baseY - top, 1);
+      const rad = Math.min(2, barW / 2);
+      svg.append(svgEl("path", {
+        class: r.on > 0 ? "bar-on" : "bar-off",
+        d: `M${bx},${baseY} V${top + rad} Q${bx},${top} ${bx + rad},${top} H${bx + barW - rad} Q${bx + barW},${top} ${bx + barW},${top + rad} V${baseY} Z`,
+      }));
+    }
+
+    // Líneas de referencia (mínima / máxima) con etiqueta directa
+    for (const line of refLines) {
+      if (line.value == null) continue;
+      const ly = y(line.value);
+      svg.append(svgEl("line", { class: "ref-line", x1: m.left, x2: m.left + plotW, y1: ly, y2: ly }));
+      svg.append(svgEl("text", { class: "ref-label", x: m.left + plotW + 4, y: ly + 3 }, line.label));
+    }
+
+    // Hover / toque: columna resaltada + tooltip
+    const hover = svgEl("rect", { class: "hover-col", y: m.top, height: plotH, width: Math.max(slotW, 6), visibility: "hidden" });
+    svg.append(hover);
+    const tip = el("div", "tooltip");
+    tip.hidden = true;
+
+    function showTip(evt) {
+      const rect = svg.getBoundingClientRect();
+      const px = ((evt.clientX - rect.left) / rect.width) * width;
+      if (px < m.left || px > m.left + plotW) return hideTip();
+      const t = start + ((px - m.left) / plotW) * (end - start);
+      const r = withValue.find((row) => t >= row.t.getTime() && t < row.t.getTime() + windowSec * 1000)
+        || withValue.reduce((best, row) => Math.abs(row.t - t) < Math.abs(best.t - t) ? row : best);
+      hover.setAttribute("x", x(r.t.getTime()) + slotW / 2 - Math.max(slotW, 6) / 2);
+      hover.setAttribute("visibility", "visible");
+      const onMin = r.on / 60;
+      tip.replaceChildren(
+        el("div", "", formatTime(r.t).slice(0, 5) + (range === "7d" ? " · " + pad2(r.t.getDate()) + "/" + pad2(r.t.getMonth() + 1) : "")),
+        (() => { const d = el("div", ""); d.append("Temperatura ", el("strong", "", fmtNum(r.temp) + " " + unit)); return d; })(),
+        el("div", "", onLabel + ": " + (r.on > 0 ? fmtNum(onMin, onMin < 10 ? 1 : 0) + " min de " + Math.round(windowSec / 60) : "apagada")),
+      );
+      tip.hidden = false;
+      const cx = ((x(r.t.getTime()) + slotW / 2) / width) * rect.width;
+      const left = Math.min(Math.max(cx - tip.offsetWidth / 2, 0), rect.width - tip.offsetWidth);
+      tip.style.left = left + "px";
+      tip.style.top = "-6px";
+    }
+    function hideTip() {
+      tip.hidden = true;
+      hover.setAttribute("visibility", "hidden");
+    }
+    svg.addEventListener("pointermove", showTip);
+    svg.addEventListener("pointerdown", showTip);
+    svg.addEventListener("pointerleave", hideTip);
+
+    container.append(svg, tip);
+  }
+
+  // Ciclo = racha de ventanas seguidas con el aparato prendido
+  function computeCycles(rows, windowSec) {
+    const cycles = [];
+    let current = null;
+    rows.forEach((r, i) => {
+      if (r.on > 0) {
+        if (!current) current = { startIdx: i, endIdx: i, onSec: 0 };
+        current.endIdx = i;
+        current.onSec += r.on;
+      } else if (current) {
+        cycles.push(current);
+        current = null;
+      }
+    });
+    if (current) cycles.push(current);
+
+    return cycles.map((c, k) => {
+      const next = cycles[k + 1];
+      const lastIdx = next ? next.startIdx - 1 : rows.length - 1;
+      const slice = rows.slice(c.startIdx, lastIdx + 1).filter((r) => r.temp !== null);
+      const startTemp = rows.slice(c.startIdx).find((r) => r.temp !== null)?.temp ?? null;
+      const endOnTemp = rows.slice(c.startIdx, c.endIdx + 1).filter((r) => r.temp !== null).pop()?.temp ?? null;
+      const peakRow = slice.reduce((best, r) => (!best || r.temp > best.temp ? r : best), null);
+      const offAt = rows[c.endIdx].t.getTime() + windowSec * 1000;
+      const stillOn = !next && c.endIdx === rows.length - 1;
+      const lastTempRow = slice[slice.length - 1];
+      const coolHours = peakRow && lastTempRow ? (lastTempRow.t - peakRow.t) / 3600e3 : 0;
+      return {
+        start: rows[c.startIdx].t,
+        onMin: c.onSec / 60,
+        startTemp,
+        peak: peakRow?.temp ?? null,
+        rate: startTemp !== null && endOnTemp !== null && c.onSec > 0 ? (endOnTemp - startTemp) / (c.onSec / 60) : null,
+        stillOn,
+        heldMs: next ? rows[next.startIdx].t - offAt : null,
+        heldSoFarMs: !next && !stillOn ? Date.now() - offAt : null,
+        dropPerHour: coolHours >= 0.25 ? (peakRow.temp - lastTempRow.temp) / coolHours : null,
+      };
+    });
+  }
+
+  function renderCycles(container, note, cycles, windowSec) {
+    container.replaceChildren();
+    if (!cycles.length) {
+      note.textContent = "No hubo ciclos de calefacción en este período.";
+      return;
+    }
+    const table = el("table", "cycles");
+    const head = el("tr");
+    for (const h of ["Inicio", "Prendida", "Sube", "°C/min prendida", "Se mantuvo", "Cae"]) head.append(el("th", "", h));
+    table.append(el("thead"));
+    table.tHead.append(head);
+    const body = el("tbody");
+    const dash = "—";
+    const shown = cycles.slice(-20).reverse();
+    for (const c of shown) {
+      const tr = el("tr");
+      const day = heatRange === "7d" ? pad2(c.start.getDate()) + "/" + pad2(c.start.getMonth() + 1) + " " : "";
+      const held = c.stillOn ? "prendida ahora"
+        : c.heldMs !== null ? formatDuration(c.heldMs)
+        : "en curso (" + formatDuration(c.heldSoFarMs) + ")";
+      for (const v of [
+        day + formatTime(c.start).slice(0, 5),
+        formatDuration(c.onMin * 60000),
+        c.startTemp !== null && c.peak !== null ? fmtNum(c.startTemp) + " → " + fmtNum(c.peak) + " °C" : dash,
+        c.rate !== null ? fmtNum(c.rate, 2) : dash,
+        held,
+        c.dropPerHour !== null ? fmtNum(c.dropPerHour) + " °C/h" : dash,
+      ]) tr.append(el("td", "", v));
+      body.append(tr);
+    }
+    const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : null);
+    const rates = cycles.map((c) => c.rate).filter((v) => v !== null);
+    const helds = cycles.map((c) => c.heldMs).filter((v) => v !== null);
+    const drops = cycles.map((c) => c.dropPerHour).filter((v) => v !== null);
+    const sum = el("tr", "summary");
+    for (const v of [
+      "Promedio (" + cycles.length + ")",
+      formatDuration(avg(cycles.map((c) => c.onMin)) * 60000),
+      "",
+      rates.length ? fmtNum(avg(rates), 2) : dash,
+      helds.length ? formatDuration(avg(helds)) : dash,
+      drops.length ? fmtNum(avg(drops)) + " °C/h" : dash,
+    ]) sum.append(el("td", "", v));
+    body.append(sum);
+    table.append(body);
+    container.append(table);
+    note.textContent = "Valores aproximados a ventanas de " + Math.round(windowSec / 60)
+      + " min. «Sube» incluye lo que sigue subiendo después de apagarse; «Se mantuvo» es el tiempo hasta volver a prender."
+      + " Para más detalle, bajá el intervalo en Historial.";
+  }
+
+  function drawHeatChart() {
+    if (!heatData) return;
+    renderBarChart($("heat-chart"), {
+      rows: heatData.rows, windowSec: heatData.windowSec, range: heatData.range, unit: "°C", onLabel: "Calefacción",
+      refLines: [{ value: heating.max, label: "máx " + fmtNum(heating.max ?? 0, 0) }, { value: heating.min, label: "mín " + fmtNum(heating.min ?? 0, 0) }],
+    });
+    renderCycles($("heat-cycles"), $("heat-cycles-note"), computeCycles(heatData.rows, heatData.windowSec), heatData.windowSec);
+  }
+
+  async function loadHeatChart() {
+    const range = heatRange;
+    document.querySelectorAll("[data-range]").forEach((b) => b.classList.toggle("active", b.dataset.range === range));
+    if (!heatData || heatData.range !== range) {
+      $("heat-chart").replaceChildren(el("div", "chart-empty", "Cargando…"));
+    }
+    try {
+      const res = await fetch("/history?range=" + range, { cache: "no-store" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "No se pudo cargar el historial.");
+      }
+      const windowSec = Number(res.headers.get("X-Window-Min") || 5) * 60;
+      const rows = parseInfluxCsv(await res.text());
+      if (range !== heatRange) return;  // El usuario cambió de rango mientras cargaba
+      heatData = { rows, windowSec, range };
+      drawHeatChart();
+    } catch (err) {
+      heatData = null;
+      $("heat-chart").replaceChildren(el("div", "chart-empty", errorText(err)));
+      $("heat-cycles").replaceChildren();
+      $("heat-cycles-note").textContent = "";
+    }
+  }
+
+  document.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => {
+    heatRange = b.dataset.range;
+    try { localStorage.setItem("heatRange", heatRange); } catch {}
+    loadHeatChart();
+  }));
+  $("heat-chart-refresh").addEventListener("click", loadHeatChart);
+  new ResizeObserver(() => drawHeatChart()).observe($("heat-chart"));
 
   // ---- Registro ----
   const LOG_MAX = 300;
@@ -1251,10 +1685,14 @@
     }
   });
 
-  Promise.all([loadDevice(), humidity.load(), heating.load(), loadExtractor()]).then(update).then(loadDevices);
+  Promise.all([loadDevice(), humidity.load(), heating.load(), loadExtractor()]).then(() => {
+    update().then(loadDevices);
+    loadHeatChart();
+  });
   loadLogs().then(() => { $("log").scrollTop = $("log").scrollHeight; });
   loadHistory(true);
   setInterval(() => loadHistory(false), 5000);
+  setInterval(loadHeatChart, 5 * 60 * 1000);
   setInterval(() => update().then(updatePeers), 5000);
   setInterval(loadLogs, 5000);
   setInterval(loadDevices, 30000);

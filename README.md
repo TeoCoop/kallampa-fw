@@ -99,7 +99,7 @@ Se pueden tener varios equipos andando en la misma WiFi:
 
 ## Historial (InfluxDB)
 
-Cada equipo puede guardar su historial en una base **InfluxDB 2.x**: temperatura y humedad **cada 5 minutos** y cuántos segundos estuvieron encendidos el humidificador y la calefacción en cada intervalo. Se configura desde la tarjeta **Historial (InfluxDB)** del panel, en cualquier momento después de configurar el equipo.
+Cada equipo puede guardar su historial en una base **InfluxDB 2.x**: temperatura y humedad cada tantos minutos (campo **Cada (minutos)**, de 1 a 60; por defecto 5) y cuántos segundos estuvieron encendidos el humidificador y la calefacción en cada intervalo. Se configura desde la tarjeta **Historial (InfluxDB)** del panel, en cualquier momento después de configurar el equipo.
 
 ### Preparar InfluxDB Cloud (recomendado)
 
@@ -119,9 +119,9 @@ actuadores,device=carpa-1,id=0c2cc8 humidificador_seg=120i,calefaccion_seg=0i <e
 
 - `device` es el nombre del equipo; `id` sale de la MAC y no cambia aunque se renombre.
 - `ambiente` se omite si en ese momento la lectura del DHT22 es inválida.
-- `humidificador_seg` / `calefaccion_seg` son los segundos encendido dentro de esos 5 minutos: sumándolos se obtiene el tiempo total de cualquier período.
+- `humidificador_seg` / `calefaccion_seg` son los segundos encendido dentro de cada intervalo: sumándolos se obtiene el tiempo total de cualquier período.
 - La hora se toma por NTP (UTC). Hasta sincronizarla, no se toman muestras.
-- Si no hay conexión o InfluxDB no responde, las muestras quedan en la RAM del equipo (hasta 12 h) y se envían en el próximo intento. Se pierden si el ESP32 se reinicia.
+- Si no hay conexión o InfluxDB no responde, las muestras quedan en la RAM del equipo (hasta ~12 h, máximo 144 muestras) y se envían en el próximo intento. Se pierden si el ESP32 se reinicia.
 - El envío es por `https` cifrado pero sin verificar el certificado del servidor.
 - El token nunca se devuelve al panel: para cambiarlo se escribe uno nuevo; si el campo queda vacío se mantiene el guardado.
 
@@ -140,6 +140,29 @@ from(bucket: "cultivo")
   |> aggregateWindow(every: 1d, fn: sum)
   |> map(fn: (r) => ({ r with _value: float(v: r._value) / 3600.0 }))
 ```
+
+## Gráficos
+
+La tarjeta **Calefacción · historial** (debajo de la de Calefacción) muestra la temperatura de las últimas **6 h, 24 h o 7 días** en barras:
+
+- **Barra azul:** en esa ventana la calefacción estuvo prendida. **Barra gris:** estuvo apagada.
+- Las líneas punteadas son la mínima y la máxima configuradas.
+- Pasando el mouse (o tocando) una barra se ve la hora, la temperatura promedio y cuántos minutos estuvo prendida.
+- Cada barra es una ventana de 1 min (6 h), 5 min (24 h) o 30 min (7 d), o el intervalo de muestreo si es mayor.
+
+Debajo, la **tabla de ciclos** (un ciclo = una racha de calefacción prendida), para entender cuánto calienta y cuánto mantiene:
+
+| Columna | Qué es |
+|---|---|
+| Prendida | Tiempo que estuvo prendida en ese ciclo |
+| Sube | Temperatura al empezar → la más alta alcanzada, incluida la que sigue subiendo después de apagarse (inercia) |
+| °C/min prendida | Cuánto sube por minuto mientras está prendida |
+| Se mantuvo | Cuánto tardó, desde que se apagó, en volver a necesitar calefacción |
+| Cae | Cuántos °C por hora pierde desde el pico hasta volver a prender |
+
+La última fila es el promedio. Los valores son aproximados al tamaño de la ventana: para más detalle, bajar el intervalo de muestreo (por ejemplo a 1 min) en la tarjeta Historial.
+
+Los datos se leen de InfluxDB a través del propio ESP32 (el token no sale del equipo), así que hace falta el historial configurado y un token con permiso de **lectura** además de escritura. El gráfico no usa librerías externas: funciona aunque el celular no tenga internet, siempre que el ESP32 sí lo tenga.
 
 ## Registro
 
@@ -161,8 +184,9 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 | `GET /device` | Este equipo: `{"id":"a1b2c3","name":"carpa-1","version":"039601a 2026-09-24 13:43","ip":"192.168.1.142"}` |
 | `POST /device` | Parámetro de formulario `name`; cambia el nombre (400 si no es válido) |
 | `GET /logs?since=<seq>` | Registro: `{"now":123456,"last":42,"entries":[{"seq":42,"ms":120000,"repeat":1,"text":"Extractor ENCENDIDO"}]}` con los mensajes posteriores a `since` (`now` y `ms` son milisegundos desde el arranque) |
-| `GET /history-config` | Historial: `{"enabled":true,"url":"…","org":"…","bucket":"…","tokenSet":true,"pending":0,"lastOk":1760000000,"lastError":""}` (el token nunca se devuelve) |
-| `POST /history-config` | Parámetros de formulario `enabled` (`1`/`0`), `url`, `org`, `bucket` y `token` (vacío = mantener el guardado); 400 si no es válida |
+| `GET /history-config` | Historial: `{"enabled":true,"url":"…","org":"…","bucket":"…","tokenSet":true,"intervalMin":5,"pending":0,"lastOk":1760000000,"lastError":""}` (el token nunca se devuelve) |
+| `POST /history-config` | Parámetros de formulario `enabled` (`1`/`0`), `url`, `org`, `bucket`, `token` (vacío = mantener el guardado) e `interval` (minutos, 1–60); 400 si no es válida |
+| `GET /history?range=6h\|24h\|7d` | CSV de InfluxDB con `_time`, `temperatura` (promedio) y `calefaccion_seg` (suma) por ventana; el header `X-Window-Min` indica el tamaño de la ventana. 409 si el historial no está configurado, 502 si InfluxDB responde error |
 | `POST /history-test` | Toma una muestra y la envía ya; responde el estado o `{"error":"…"}` con el motivo |
 | `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
 | `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado). Permite lecturas desde otros equipos (CORS) |

@@ -33,8 +33,8 @@ static const size_t MAX_PEERS = 20;
 static const uint8_t PEER_MAX_MISSED = 3;  // Búsquedas seguidas sin respuesta antes de sacarlo de la lista
 static const size_t LOG_SIZE = 100;       // Mensajes que se guardan en RAM para el panel
 static const size_t LOG_TEXT_LEN = 96;
-static const unsigned long HISTORY_INTERVAL_MS = 5UL * 60 * 1000;  // Una muestra cada 5 minutos
-static const size_t HISTORY_QUEUE_SIZE = 144;       // Muestras pendientes que se guardan sin conexión (12 h)
+static const uint16_t HISTORY_INTERVAL_MAX_MIN = 60;
+static const size_t HISTORY_QUEUE_MAX = 144;       // Máximo de muestras pendientes sin conexión (RAM)
 static const uint16_t HISTORY_HTTP_TIMEOUT_MS = 4000;
 static const unsigned long HISTORY_TLS_TIMEOUT_SEC = 8;
 static const time_t TIME_VALID_AFTER = 1700000000;  // Antes de esto el reloj todavía no se sincronizó por NTP
@@ -82,6 +82,7 @@ unsigned long phaseStartedAt = 0;
 
 // Historial en InfluxDB
 bool histEnabled = false;
+uint16_t historyIntervalMin = 5;  // Cada cuántos minutos se toma una muestra
 String influxUrl;
 String influxOrg;
 String influxBucket;
@@ -575,8 +576,42 @@ void takeHistorySample() {
   sample += "actuadores," + tags + " humidificador_seg=" + String(humSec) + "i" +
             ",calefaccion_seg=" + String(heatSec) + "i " + String((uint32_t)now);
 
-  if (historyQueue.size() >= HISTORY_QUEUE_SIZE) historyQueue.erase(historyQueue.begin());
+  // Hasta ~12 h de pendientes, con un tope de muestras para no llenar la RAM
+  size_t maxQueue = min((size_t)(720 / historyIntervalMin), HISTORY_QUEUE_MAX);
+  while (historyQueue.size() >= maxQueue) historyQueue.erase(historyQueue.begin());
   historyQueue.push_back(sample);
+}
+
+// Prepara un pedido a InfluxDB (http o https) con el token. path empieza con "/api/v2/..."
+bool beginInflux(HTTPClient &http, WiFiClient &plain, WiFiClientSecure &secure, const String &path) {
+  String base = influxUrl;
+  while (base.endsWith("/")) base.remove(base.length() - 1);
+  http.setConnectTimeout(HISTORY_HTTP_TIMEOUT_MS);
+  http.setTimeout(HISTORY_HTTP_TIMEOUT_MS);
+  bool started;
+  if (base.startsWith("https://")) {
+    // Cifrado sin verificar el certificado del servidor (no hace falta cargar certificados)
+    secure.setInsecure();
+    secure.setHandshakeTimeout(HISTORY_TLS_TIMEOUT_SEC);
+    started = http.begin(secure, base + path);
+  } else {
+    started = http.begin(plain, base + path);
+  }
+  if (started) http.addHeader("Authorization", "Token " + influxToken);
+  return started;
+}
+
+// Texto corto del error de InfluxDB, que responde {"code":"...","message":"..."}
+String influxError(HTTPClient &http, int code) {
+  String detail = code > 0 ? http.getString() : HTTPClient::errorToString(code);
+  int msgAt = detail.indexOf("\"message\":\"");
+  if (msgAt >= 0) {
+    int start = msgAt + 11;
+    int end = detail.indexOf('"', start);
+    detail = detail.substring(start, end > start ? end : detail.length());
+  }
+  if (detail.length() > 80) detail = detail.substring(0, 80);
+  return code > 0 ? "error " + String(code) + ": " + detail : detail;
 }
 
 // Envía todas las muestras pendientes en un solo POST. Devuelve true si quedó la cola vacía.
@@ -587,34 +622,19 @@ bool sendHistory() {
     return false;
   }
 
-  String base = influxUrl;
-  while (base.endsWith("/")) base.remove(base.length() - 1);
-  String url = base + "/api/v2/write?org=" + urlEncode(influxOrg) +
-               "&bucket=" + urlEncode(influxBucket) + "&precision=s";
-
   String body;
   for (const String &sample : historyQueue) body += sample + "\n";
 
   WiFiClient plain;
   WiFiClientSecure secure;
   HTTPClient http;
-  http.setConnectTimeout(HISTORY_HTTP_TIMEOUT_MS);
-  http.setTimeout(HISTORY_HTTP_TIMEOUT_MS);
-  bool started;
-  if (base.startsWith("https://")) {
-    // Cifrado sin verificar el certificado del servidor (no hace falta cargar certificados)
-    secure.setInsecure();
-    secure.setHandshakeTimeout(HISTORY_TLS_TIMEOUT_SEC);
-    started = http.begin(secure, url);
-  } else {
-    started = http.begin(plain, url);
-  }
-  if (!started) {
+  String path = "/api/v2/write?org=" + urlEncode(influxOrg) +
+                "&bucket=" + urlEncode(influxBucket) + "&precision=s";
+  if (!beginInflux(http, plain, secure, path)) {
     historyLastError = "URL inválida";
     logMsg("Historial: URL inválida");
     return false;
   }
-  http.addHeader("Authorization", "Token " + influxToken);
   http.addHeader("Content-Type", "text/plain; charset=utf-8");
 
   int code = http.POST(body);
@@ -628,17 +648,8 @@ bool sendHistory() {
     return true;
   }
 
-  String detail = code > 0 ? http.getString() : HTTPClient::errorToString(code);
+  historyLastError = influxError(http, code);
   http.end();
-  // InfluxDB responde {"code":"...","message":"..."}: nos quedamos con el mensaje
-  int msgAt = detail.indexOf("\"message\":\"");
-  if (msgAt >= 0) {
-    int start = msgAt + 11;
-    int end = detail.indexOf('"', start);
-    detail = detail.substring(start, end > start ? end : detail.length());
-  }
-  if (detail.length() > 80) detail = detail.substring(0, 80);
-  historyLastError = code > 0 ? "error " + String(code) + ": " + detail : detail;
   logMsg("Historial: %s", historyLastError.c_str());
 
   // Datos mal formados o demasiado grandes nunca van a entrar: se descartan para no trabar la cola
@@ -651,7 +662,7 @@ void updateHistory() {
     timeSynced = true;
     logMsg("Hora sincronizada por NTP");
   }
-  if (millis() - lastHistoryAt < HISTORY_INTERVAL_MS) return;
+  if (millis() - lastHistoryAt < historyIntervalMin * 60000UL) return;
   lastHistoryAt = millis();
   takeHistorySample();
   if (historyConfigured()) sendHistory();
@@ -663,6 +674,7 @@ String historyJson() {
          ",\"org\":" + jsonString(influxOrg) +
          ",\"bucket\":" + jsonString(influxBucket) +
          ",\"tokenSet\":" + String(influxToken.length() ? "true" : "false") +
+         ",\"intervalMin\":" + String(historyIntervalMin) +
          ",\"pending\":" + String(historyQueue.size()) +
          ",\"lastOk\":" + (historyLastOk ? String((uint32_t)historyLastOk) : String("null")) +
          ",\"lastError\":" + jsonString(historyLastError) + "}";
@@ -687,6 +699,11 @@ void handlePostHistoryConfig() {
     server.send(400, "application/json", "{\"error\":\"La URL tiene que empezar con http:// o https://\"}");
     return;
   }
+  long interval = server.hasArg("interval") ? server.arg("interval").toInt() : historyIntervalMin;
+  if (interval < 1 || interval > HISTORY_INTERVAL_MAX_MIN) {
+    server.send(400, "application/json", "{\"error\":\"El intervalo tiene que ser de 1 a 60 minutos\"}");
+    return;
+  }
   if (enabled && (!url.length() || !org.length() || !bucket.length() || (!token.length() && !influxToken.length()))) {
     server.send(400, "application/json", "{\"error\":\"Para activarlo completá URL, organización, bucket y token\"}");
     return;
@@ -697,6 +714,11 @@ void handlePostHistoryConfig() {
   influxOrg = org;
   influxBucket = bucket;
   if (token.length()) influxToken = token;
+  if (interval != historyIntervalMin) {
+    historyIntervalMin = interval;
+    lastHistoryAt = millis();  // El nuevo intervalo empieza a contar ahora
+  }
+  prefs.putUShort("histInt", historyIntervalMin);
   prefs.putBool("histEn", histEnabled);
   prefs.putString("influxUrl", influxUrl);
   prefs.putString("influxOrg", influxOrg);
@@ -704,8 +726,96 @@ void handlePostHistoryConfig() {
   prefs.putString("influxToken", influxToken);
   historyLastError = "";
   if (!histEnabled) historyQueue.clear();
-  logMsg("Historial: activo=%d url=%s bucket=%s", histEnabled, influxUrl.c_str(), influxBucket.c_str());
+  logMsg("Historial: activo=%d cada %u min url=%s bucket=%s", histEnabled, historyIntervalMin, influxUrl.c_str(), influxBucket.c_str());
   server.send(200, "application/json", historyJson());
+}
+
+// Reenvía al navegador, pedazo a pedazo, lo que llega de InfluxDB (sin guardarlo entero en RAM)
+class ServerStream : public Stream {
+ public:
+  size_t write(uint8_t c) override { return write(&c, 1); }
+  size_t write(const uint8_t *buffer, size_t size) override {
+    server.sendContent((const char *)buffer, size);
+    return size;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+};
+
+String fluxString(const String &value) {
+  String out = "\"";
+  for (size_t i = 0; i < value.length(); i++) {
+    if (value[i] == '"' || value[i] == '\\') out += '\\';
+    out += value[i];
+  }
+  return out + "\"";
+}
+
+// Datos para el gráfico de calefacción: temperatura promedio y segundos prendida por ventana, en CSV
+void handleHistory() {
+  if (!historyConfigured()) {
+    server.send(409, "application/json", "{\"error\":\"Configurá el historial (InfluxDB) para ver gráficos\"}");
+    return;
+  }
+  String range = server.arg("range");
+  // Ventana "redonda" para que queden como mucho ~360 barras, nunca menor al intervalo de muestreo
+  uint16_t stepMin;
+  if (range == "6h") stepMin = 1;
+  else if (range == "7d") stepMin = 30;
+  else {
+    range = "24h";
+    stepMin = 5;
+  }
+  uint16_t windowMin = max(stepMin, historyIntervalMin);
+
+  String every = String(windowMin) + "m";
+  String query =
+      "base = from(bucket: " + fluxString(influxBucket) + ")\n"
+      "  |> range(start: -" + range + ")\n"
+      "  |> filter(fn: (r) => r.id == " + fluxString(deviceId) + ")\n"
+      "t = base\n"
+      "  |> filter(fn: (r) => r._measurement == \"ambiente\" and r._field == \"temperatura\")\n"
+      "  |> aggregateWindow(every: " + every + ", fn: mean, createEmpty: false, timeSrc: \"_start\")\n"
+      "h = base\n"
+      "  |> filter(fn: (r) => r._measurement == \"actuadores\" and r._field == \"calefaccion_seg\")\n"
+      "  |> aggregateWindow(every: " + every + ", fn: sum, createEmpty: false, timeSrc: \"_start\")\n"
+      "union(tables: [t, h])\n"
+      "  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n"
+      "  |> group()\n"
+      "  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n"
+      "  |> sort(columns: [\"_time\"])\n";
+  String body = "{\"query\":" + jsonString(query) +
+                ",\"dialect\":{\"annotations\":[],\"header\":true}}";
+
+  WiFiClient plain;
+  WiFiClientSecure secure;
+  HTTPClient http;
+  if (!beginInflux(http, plain, secure, "/api/v2/query?org=" + urlEncode(influxOrg))) {
+    server.send(502, "application/json", "{\"error\":\"URL de InfluxDB inválida\"}");
+    return;
+  }
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Accept", "application/csv");
+
+  int code = http.POST(body);
+  if (code != 200) {
+    String error = influxError(http, code);
+    http.end();
+    if (code == 401 || code == 403) error += " (el token necesita permiso de lectura)";
+    logMsg("Gráfico: %s", error.c_str());
+    server.send(502, "application/json", "{\"error\":" + jsonString(error) + "}");
+    return;
+  }
+
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.sendHeader("X-Window-Min", String(windowMin));
+  server.send(200, "text/csv", "");
+  ServerStream out;
+  http.writeToStream(&out);
+  server.sendContent("");
+  http.end();
 }
 
 // Toma una muestra ya y la envía, para probar la configuración sin esperar 5 minutos
@@ -792,6 +902,8 @@ void setup() {
   influxOrg = prefs.getString("influxOrg", "");
   influxBucket = prefs.getString("influxBucket", "");
   influxToken = prefs.getString("influxToken", "");
+  historyIntervalMin = prefs.getUShort("histInt", historyIntervalMin);
+  if (historyIntervalMin < 1 || historyIntervalMin > HISTORY_INTERVAL_MAX_MIN) historyIntervalMin = 5;
 
   dht.begin();
 
@@ -830,6 +942,7 @@ void setup() {
   server.on("/history-config", HTTP_GET, handleGetHistoryConfig);
   server.on("/history-config", HTTP_POST, handlePostHistoryConfig);
   server.on("/history-test", HTTP_POST, handleHistoryTest);
+  server.on("/history", HTTP_GET, handleHistory);
   server.on("/config", HTTP_GET, handleGetConfig);
   server.on("/config", HTTP_POST, handlePostConfig);
   server.on("/heater", HTTP_GET, handleGetHeater);
