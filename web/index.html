@@ -419,6 +419,24 @@
     gap: 6px;
   }
 
+  .history-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .form-actions button.secondary { height: 36px; padding: 0 14px; font-size: 14px; }
+
+  @media (max-width: 480px) {
+    .history-grid { grid-template-columns: 1fr; }
+  }
+
   .log {
     height: 260px;
     overflow-y: auto;
@@ -644,6 +662,42 @@
           <button type="submit" id="device-save">Guardar</button>
         </form>
         <p class="message" id="device-message" role="status"></p>
+      </section>
+      <section class="card control">
+        <div class="card-header">
+          <span class="title">Historial (InfluxDB)</span>
+          <span class="badge off" id="hist-badge">DESACTIVADO</span>
+        </div>
+        <p class="help">Temperatura y humedad cada 5 minutos, y el tiempo encendido del humidificador y la calefacción. La retención de 7 días se configura en el bucket.</p>
+        <label class="switch">
+          <input type="checkbox" id="hist-enabled">
+          <span class="track"></span>
+          Guardar historial
+        </label>
+        <form id="hist-form" class="history-grid" novalidate>
+          <div class="field">
+            <label for="hist-url">URL</label>
+            <input id="hist-url" type="url" placeholder="https://us-east-1-1.aws.cloud2.influxdata.com" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="hist-org">Organización</label>
+            <input id="hist-org" type="text" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="hist-bucket">Bucket</label>
+            <input id="hist-bucket" type="text" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="hist-token">Token</label>
+            <input id="hist-token" type="password" autocomplete="new-password" spellcheck="false">
+          </div>
+        </form>
+        <div class="form-actions">
+          <button type="button" class="secondary" id="hist-test">Probar envío</button>
+          <button type="submit" form="hist-form" id="hist-save">Guardar</button>
+        </div>
+        <p class="help" id="hist-status"></p>
+        <p class="message" id="hist-message" role="status"></p>
       </section>
       <section class="card control">
         <div class="card-header">
@@ -1021,6 +1075,111 @@
     }
   }
 
+  // ---- Historial (InfluxDB) ----
+  let history = null;
+
+  function renderHistoryStatus() {
+    if (!history) return;
+    const badge = $("hist-badge");
+    const failing = history.enabled && history.lastError;
+    badge.textContent = !history.enabled ? "DESACTIVADO" : failing ? "ERROR" : "ACTIVO";
+    badge.className = "badge" + (!history.enabled ? " off" : failing ? " error" : "");
+
+    const status = $("hist-status");
+    status.style.color = failing ? "var(--err)" : "";
+    if (!history.enabled) {
+      status.textContent = "";
+    } else if (failing) {
+      status.textContent = "Último intento: " + history.lastError + " · " + history.pending + " muestra(s) pendiente(s)";
+    } else if (history.lastOk) {
+      status.textContent = "Último envío: " + formatTime(new Date(history.lastOk * 1000)) + " · " + history.pending + " muestra(s) pendiente(s)";
+    } else {
+      status.textContent = "Todavía no se envió nada. La primera muestra sale a los 5 minutos, o usá \u201cProbar envío\u201d.";
+    }
+    $("hist-token").placeholder = history.tokenSet ? "guardado — dejar vacío para no cambiarlo" : "";
+  }
+
+  async function loadHistory(fillForm) {
+    try {
+      const res = await fetch("/history-config", { cache: "no-store" });
+      history = await res.json();
+      if (fillForm) {
+        $("hist-enabled").checked = history.enabled;
+        $("hist-url").value = history.url;
+        $("hist-org").value = history.org;
+        $("hist-bucket").value = history.bucket;
+      }
+      renderHistoryStatus();
+    } catch {
+      // Se reintenta en la próxima vuelta
+    }
+  }
+
+  async function saveHistory() {
+    const url = $("hist-url").value.trim();
+    const enabled = $("hist-enabled").checked;
+    const urlOk = !url || /^https?:\/\//.test(url);
+    $("hist-url").setAttribute("aria-invalid", !urlOk);
+    if (!urlOk) {
+      showMessage("La URL tiene que empezar con http:// o https://", "error", "hist-message");
+      return false;
+    }
+
+    $("hist-save").disabled = true;
+    try {
+      const res = await fetch("/history-config", {
+        method: "POST",
+        body: new URLSearchParams({
+          enabled: enabled ? 1 : 0,
+          url,
+          org: $("hist-org").value.trim(),
+          bucket: $("hist-bucket").value.trim(),
+          token: $("hist-token").value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al guardar.");
+      history = data;
+      $("hist-token").value = "";
+      renderHistoryStatus();
+      showMessage("Guardado.", "ok", "hist-message");
+      return true;
+    } catch (err) {
+      showMessage(errorText(err), "error", "hist-message");
+      return false;
+    } finally {
+      $("hist-save").disabled = false;
+    }
+  }
+
+  $("hist-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveHistory();
+  });
+
+  // El interruptor guarda al instante; si falla, vuelve a su posición anterior
+  $("hist-enabled").addEventListener("change", async () => {
+    if (!(await saveHistory())) $("hist-enabled").checked = history?.enabled ?? false;
+  });
+
+  $("hist-test").addEventListener("click", async () => {
+    $("hist-test").disabled = true;
+    showMessage("Enviando…", "ok", "hist-message");
+    try {
+      const res = await fetch("/history-test", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al enviar.");
+      history = data;
+      renderHistoryStatus();
+      showMessage("Envío correcto: la muestra llegó a InfluxDB.", "ok", "hist-message");
+    } catch (err) {
+      showMessage(errorText(err), "error", "hist-message");
+      loadHistory(false);
+    } finally {
+      $("hist-test").disabled = false;
+    }
+  });
+
   // ---- Registro ----
   const LOG_MAX = 300;
   let logEntries = [];  // { seq, time (Date), text, repeat }
@@ -1093,6 +1252,8 @@
 
   Promise.all([loadDevice(), humidity.load(), heating.load(), loadExtractor()]).then(update).then(loadDevices);
   loadLogs().then(() => { $("log").scrollTop = $("log").scrollHeight; });
+  loadHistory(true);
+  setInterval(() => loadHistory(false), 5000);
   setInterval(() => update().then(updatePeers), 5000);
   setInterval(loadLogs, 5000);
   setInterval(loadDevices, 30000);

@@ -80,6 +80,50 @@ Se pueden tener varios equipos andando en la misma WiFi:
 - La tarjeta **Dispositivos**, arriba de todo, muestra todos los controladores de la red con su temperatura, humedad y qué aparatos tienen prendidos (HUM, CAL, EXT). Cada nombre es un link a su panel. Los equipos se encuentran solos por mDNS; uno nuevo puede tardar hasta 30 s en aparecer.
 - Cada equipo se configura desde su propio panel.
 
+## Historial (InfluxDB)
+
+Cada equipo puede guardar su historial en una base **InfluxDB 2.x**: temperatura y humedad **cada 5 minutos** y cuántos segundos estuvieron encendidos el humidificador y la calefacción en cada intervalo. Se configura desde la tarjeta **Historial (InfluxDB)** del panel, en cualquier momento después de configurar el equipo.
+
+### Preparar InfluxDB Cloud (recomendado)
+
+1. Crear una cuenta gratis en InfluxDB Cloud y anotar la **URL de la región** (por ejemplo `https://us-east-1-1.aws.cloud2.influxdata.com`) y el nombre de la **organización** (suele ser el email de la cuenta).
+2. **Load Data → Buckets → Create Bucket**: por ejemplo `cultivo`, con **Delete data: older than 7 days**. Así InfluxDB borra solo lo que tenga más de una semana.
+3. **Load Data → API Tokens → Generate API Token → Custom API Token**: permiso de **lectura y escritura** sobre ese bucket (la lectura sirve para mostrar gráficos en el panel más adelante). Copiar el token, se ve una sola vez.
+4. En el panel del equipo: completar URL, organización, bucket y token, activar **Guardar historial**, **Guardar** y después **Probar envío**. Tiene que decir "Envío correcto".
+
+Alternativa local con Docker: `docker run -d -p 8086:8086 -v influxdb:/var/lib/influxdb2 influxdb:2`, hacer el setup inicial en `http://localhost:8086` (ahí se crean la organización y un bucket; ponerle retención de 7 días) y usar `http://<IP de esa PC>:8086` como URL.
+
+### Qué se guarda
+
+```
+ambiente,device=carpa-1,id=0c2cc8 temperatura=21.3,humedad=85.2 <epoch>
+actuadores,device=carpa-1,id=0c2cc8 humidificador_seg=120i,calefaccion_seg=0i <epoch>
+```
+
+- `device` es el nombre del equipo; `id` sale de la MAC y no cambia aunque se renombre.
+- `ambiente` se omite si en ese momento la lectura del DHT22 es inválida.
+- `humidificador_seg` / `calefaccion_seg` son los segundos encendido dentro de esos 5 minutos: sumándolos se obtiene el tiempo total de cualquier período.
+- La hora se toma por NTP (UTC). Hasta sincronizarla, no se toman muestras.
+- Si no hay conexión o InfluxDB no responde, las muestras quedan en la RAM del equipo (hasta 12 h) y se envían en el próximo intento. Se pierden si el ESP32 se reinicia.
+- El envío es por `https` cifrado pero sin verificar el certificado del servidor.
+- El token nunca se devuelve al panel: para cambiarlo se escribe uno nuevo; si el campo queda vacío se mantiene el guardado.
+
+Ejemplos de consulta (Flux), en **Data Explorer → Script Editor**:
+
+```flux
+// Temperatura y humedad de la última semana de un equipo
+from(bucket: "cultivo")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r._measurement == "ambiente" and r.device == "carpa-1")
+
+// Horas encendido por día del humidificador y la calefacción
+from(bucket: "cultivo")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r._measurement == "actuadores" and r.device == "carpa-1")
+  |> aggregateWindow(every: 1d, fn: sum)
+  |> map(fn: (r) => ({ r with _value: float(v: r._value) / 3600.0 }))
+```
+
 ## Registro
 
 La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes del equipo, los mismos que salen por el monitor serie: arranque, conexión WiFi, cambios de configuración, cuándo se prenden y apagan los aparatos y errores del sensor. Se actualiza cada 5 s.
@@ -100,6 +144,9 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 | `GET /device` | Este equipo: `{"id":"a1b2c3","name":"carpa-1","ip":"192.168.1.142"}` |
 | `POST /device` | Parámetro de formulario `name`; cambia el nombre (400 si no es válido) |
 | `GET /logs?since=<seq>` | Registro: `{"now":123456,"last":42,"entries":[{"seq":42,"ms":120000,"repeat":1,"text":"Extractor ENCENDIDO"}]}` con los mensajes posteriores a `since` (`now` y `ms` son milisegundos desde el arranque) |
+| `GET /history-config` | Historial: `{"enabled":true,"url":"…","org":"…","bucket":"…","tokenSet":true,"pending":0,"lastOk":1760000000,"lastError":""}` (el token nunca se devuelve) |
+| `POST /history-config` | Parámetros de formulario `enabled` (`1`/`0`), `url`, `org`, `bucket` y `token` (vacío = mantener el guardado); 400 si no es válida |
+| `POST /history-test` | Toma una muestra y la envía ya; responde el estado o `{"error":"…"}` con el motivo |
 | `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
 | `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado). Permite lecturas desde otros equipos (CORS) |
 | `GET /config` | Control de humedad: `{"enabled":true,"humMin":85,"humMax":95}` |
