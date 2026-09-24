@@ -65,11 +65,20 @@ Desde la página se configura un ciclo que alterna **tiempo apagado** y **tiempo
    ```
    ./upload-and-monitor.sh
    ```
-2. Conectarse a la red WiFi **`fungi-controller`** (clave `12345678`). Se abre el portal de configuración; si no, entrar a `http://192.168.4.1`.
+2. En el monitor serie aparece el nombre del equipo, por ejemplo `Dispositivo: fungi-a1b2c3`. Conectarse a la red WiFi con ese nombre (clave `12345678`). Se abre el portal de configuración; si no, entrar a `http://192.168.4.1`.
 3. Elegir la red WiFi de la casa e ingresar su clave.
-4. Abrir `http://fungi-controller.local/` (o la IP que aparece en el monitor serie).
+4. Abrir `http://fungi-a1b2c3.local/` (o la IP que aparece en el monitor serie).
 
-Si al arrancar no logra conectarse a la red guardada (por ejemplo, después de un corte de luz, cuando el router todavía no volvió), lo reintenta 3 veces de hasta 15 s cada una. Si falla las 3 veces, abre el portal `fungi-controller` durante 3 minutos y después se reinicia para volver a intentar.
+Si al arrancar no logra conectarse a la red guardada (por ejemplo, después de un corte de luz, cuando el router todavía no volvió), lo reintenta 3 veces de hasta 15 s cada una. Si falla las 3 veces, abre el portal (con el nombre del equipo) durante 3 minutos y después se reinicia para volver a intentar.
+
+## Varios controladores
+
+Se pueden tener varios equipos andando en la misma WiFi:
+
+- Cada equipo arranca con un nombre único, `fungi-XXXXXX`, donde `XXXXXX` sale de la MAC del chip. Ese nombre es su dirección (`http://fungi-XXXXXX.local`) y el nombre de su red de configuración WiFi.
+- Desde la tarjeta **Dispositivo** del panel se le puede poner otro nombre, por ejemplo `carpa-1` → `http://carpa-1.local`. Solo letras minúsculas, números y guiones (1 a 32). El cambio es inmediato y se guarda en el ESP32.
+- La tarjeta **Dispositivos**, arriba de todo, muestra todos los controladores de la red con su temperatura, humedad y qué aparatos tienen prendidos (HUM, CAL, EXT). Cada nombre es un link a su panel. Los equipos se encuentran solos por mDNS; uno nuevo puede tardar hasta 30 s en aparecer.
+- Cada equipo se configura desde su propio panel.
 
 ## Endpoints
 
@@ -77,7 +86,10 @@ Si al arrancar no logra conectarse a la red guardada (por ejemplo, después de u
 |---|---|
 | `/` | Página con temperatura y humedad en vivo |
 | `/status` | `{"status":"OK"}` |
-| `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado) |
+| `GET /device` | Este equipo: `{"id":"a1b2c3","name":"carpa-1","ip":"192.168.1.142"}` |
+| `POST /device` | Parámetro de formulario `name`; cambia el nombre (400 si no es válido) |
+| `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
+| `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado). Permite lecturas desde otros equipos (CORS) |
 | `GET /config` | Control de humedad: `{"enabled":true,"humMin":85,"humMax":95}` |
 | `POST /config` | Parámetros de formulario `enabled` (`1`/`0`, opcional), `humMin` y `humMax`; responde la config guardada o 400 si no es válida |
 | `GET /heater` | `{"enabled":false,"tempMin":20.0,"tempMax":24.0}` |

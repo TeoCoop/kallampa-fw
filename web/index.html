@@ -310,6 +310,84 @@
 
   .countdown { font-family: var(--font-mono); }
 
+  .devices {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .device-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .device-row:first-child { border-top: 0; padding-top: 0; }
+  .device-row:last-child { padding-bottom: 0; }
+
+  .device-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+
+  .device-row.down .device-dot { background: var(--err); }
+  .device-row.down .device-values,
+  .device-row.down .indicators { opacity: 0.5; }
+
+  .device-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-weight: 600;
+    color: var(--heading);
+  }
+
+  .device-name a {
+    overflow: hidden;
+    color: inherit;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .device-name a:hover { color: var(--ok); text-decoration: underline; }
+
+  .device-values {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--foreground);
+    white-space: nowrap;
+  }
+
+  .indicators {
+    display: flex;
+    gap: 4px;
+  }
+
+  .indicator {
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+
+  .indicator.on { background: var(--ok-bg); color: var(--ok-fg); }
+
+  @media (max-width: 480px) {
+    .device-row { grid-template-columns: auto 1fr auto; row-gap: 6px; }
+    .device-values { grid-column: 2; grid-row: 2; }
+    .indicators { grid-column: 3; grid-row: 2; }
+  }
+
   button {
     height: 36px;
     padding: 0 16px;
@@ -396,11 +474,19 @@
 </head>
 <body>
   <header>
-    <div class="brand">🍄 fungi-controller</div>
+    <div class="brand">🍄 <span id="device-name">fungi</span></div>
   </header>
 
   <main>
     <div class="grid">
+      <section class="card control">
+        <div class="card-header">
+          <span class="title">Dispositivos</span>
+          <span class="badge off" id="devices-count">1</span>
+        </div>
+        <div class="devices" id="devices"></div>
+        <p class="help" id="devices-help">Otros controladores en la misma WiFi van a aparecer acá automáticamente.</p>
+      </section>
       <section class="card">
         <div class="card-header">
           <span class="label">
@@ -506,6 +592,20 @@
           <button type="submit" id="ext-save">Guardar</button>
         </form>
         <p class="message" id="ext-message" role="status"></p>
+      </section>
+      <section class="card control">
+        <div class="card-header">
+          <span class="title">Dispositivo</span>
+        </div>
+        <p class="help" id="device-info">—</p>
+        <form id="device-form" novalidate>
+          <div class="field">
+            <label for="device-name-input">Nombre</label>
+            <input id="device-name-input" type="text" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+          </div>
+          <button type="submit" id="device-save">Guardar</button>
+        </form>
+        <p class="message" id="device-message" role="status"></p>
       </section>
     </div>
   </main>
@@ -720,6 +820,131 @@
     invalidText: "La mínima debe ser menor que la máxima (0 a 50 °C).",
   });
 
+  // ---- Este dispositivo (nombre) ----
+  const NAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
+  let device = null;
+
+  function renderDevice() {
+    $("device-name").textContent = device.name;
+    document.title = device.name;
+    $("device-info").textContent = "Dirección: http://" + device.name + ".local · IP " + device.ip;
+  }
+
+  async function loadDevice() {
+    try {
+      const res = await fetch("/device", { cache: "no-store" });
+      device = await res.json();
+      $("device-name-input").value = device.name;
+      renderDevice();
+    } catch {
+      showMessage("No se pudo cargar el dispositivo.", "error", "device-message");
+    }
+  }
+
+  $("device-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = $("device-name-input").value.trim().toLowerCase();
+    const valid = NAME_RE.test(name);
+    $("device-name-input").setAttribute("aria-invalid", !valid);
+    if (!valid) {
+      showMessage("Solo letras minúsculas, números y guiones (1 a 32, sin guion al principio ni al final).", "error", "device-message");
+      return;
+    }
+
+    $("device-save").disabled = true;
+    try {
+      const res = await fetch("/device", { method: "POST", body: new URLSearchParams({ name }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al guardar.");
+      device = data;
+      $("device-name-input").value = device.name;
+      renderDevice();
+      showMessage("Guardado. Nueva dirección: http://" + device.name + ".local", "ok", "device-message");
+      loadDevices();
+    } catch (err) {
+      showMessage(errorText(err), "error", "device-message");
+    } finally {
+      $("device-save").disabled = false;
+    }
+  });
+
+  // ---- Todos los dispositivos de la red ----
+  let devices = [];  // { name, ip, self, data, online }
+  let selfData = null;  // Última lectura de este equipo (la hace update())
+
+  async function loadDevices() {
+    try {
+      const res = await fetch("/devices", { cache: "no-store" });
+      const list = await res.json();
+      devices = list.map((d) => {
+        const prev = devices.find((p) => p.ip === d.ip);
+        if (d.self) return { ...d, data: selfData, online: true };
+        return { ...d, data: prev?.data ?? null, online: prev?.online ?? true };
+      });
+      renderDevices();
+      updatePeers();
+    } catch {
+      // Se reintenta en la próxima vuelta
+    }
+  }
+
+  async function updatePeers() {
+    await Promise.all(devices.filter((d) => !d.self).map(async (d) => {
+      try {
+        const res = await fetch("http://" + d.ip + "/sensors", { cache: "no-store", signal: AbortSignal.timeout(4000) });
+        d.data = await res.json();
+        d.online = true;
+      } catch {
+        d.online = false;
+      }
+    }));
+    renderDevices();
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function renderDevices() {
+    const list = $("devices");
+    list.replaceChildren();
+    for (const d of devices) {
+      const row = el("div", "device-row" + (d.online ? "" : " down"));
+      row.append(el("span", "device-dot"));
+
+      const name = el("span", "device-name");
+      if (d.self) {
+        name.append(el("span", "", d.name), el("span", "badge", "ESTE"));
+      } else {
+        const link = el("a", "", d.name);
+        link.href = "http://" + d.ip + "/";
+        name.append(link);
+      }
+      row.append(name);
+
+      const data = d.data;
+      const values = !d.online ? "sin conexión"
+        : !data ? "—"
+        : data.ok ? fmt(data.temperature) + " °C · " + fmt(data.humidity) + " %"
+        : "error sensor";
+      row.append(el("span", "device-values", values));
+
+      const indicators = el("span", "indicators");
+      for (const [key, label, title] of [["humidifier", "HUM", "Humidificador"], ["heater", "CAL", "Calefacción"], ["extractor", "EXT", "Extractor"]]) {
+        const ind = el("span", "indicator" + (data?.[key] ? " on" : ""), label);
+        ind.title = title + (data?.[key] ? " encendido" : " apagado");
+        indicators.append(ind);
+      }
+      row.append(indicators);
+      list.append(row);
+    }
+    $("devices-count").textContent = devices.length;
+    $("devices-help").hidden = devices.length > 1;
+  }
+
   function renderSensors(data) {
     document.body.classList.toggle("sensor-error", !data.ok);
     $("temperature").textContent = data.ok ? fmt(data.temperature) : "—";
@@ -734,15 +959,20 @@
     try {
       const res = await fetch("/sensors", { cache: "no-store" });
       if (!res.ok) throw new Error(res.status);
-      renderSensors(await res.json());
+      const data = await res.json();
+      renderSensors(data);
       renderOnline(true);
+      selfData = data;
+      const self = devices.find((d) => d.self);
+      if (self) self.data = data;
     } catch {
       renderOnline(false);
     }
   }
 
-  Promise.all([humidity.load(), heating.load(), loadExtractor()]).then(update);
-  setInterval(update, 5000);
+  Promise.all([loadDevice(), humidity.load(), heating.load(), loadExtractor()]).then(update).then(loadDevices);
+  setInterval(() => update().then(updatePeers), 5000);
+  setInterval(loadDevices, 30000);
 </script>
 </body>
 </html>
