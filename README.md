@@ -37,7 +37,7 @@ Desde la página se configuran el mínimo y el máximo de humedad y un interrupt
 - Humedad igual o mayor al máximo → humidificador apagado.
 - Entre los dos valores mantiene el estado anterior.
 - Al guardar una configuración nueva se reevalúa desde cero: queda encendido solo si la humedad está por debajo del nuevo mínimo.
-- Si falla la lectura del DHT22, el humidificador se apaga por seguridad.
+- Si el DHT22 deja de leer, se sigue usando la última lectura válida hasta **2 minutos** (el panel muestra `REINTENTANDO`); si en ese tiempo no vuelve, el humidificador se apaga por seguridad (`ERROR SENSOR`).
 
 ## Calefacción
 
@@ -48,7 +48,7 @@ Mismo funcionamiento que el control de humedad, pero con la temperatura y el rel
 - Temperatura igual o mayor a la máxima → calefacción apagada.
 - Entre los dos valores mantiene el estado anterior.
 - Al guardar una configuración nueva se reevalúa desde cero: queda encendida solo si la temperatura está por debajo de la nueva mínima.
-- Si falla la lectura del DHT22, la calefacción se apaga por seguridad.
+- Si el DHT22 deja de leer, se sigue usando la última lectura válida hasta **2 minutos**; si en ese tiempo no vuelve, la calefacción se apaga por seguridad.
 
 ## Extractor
 
@@ -189,7 +189,7 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 | `GET /history?range=6h\|24h\|7d` | CSV de InfluxDB con `_time`, `temperatura` (promedio) y `calefaccion_seg` (suma) por ventana; el header `X-Window-Min` indica el tamaño de la ventana. 409 si el historial no está configurado, 502 si InfluxDB responde error |
 | `POST /history-test` | Toma una muestra y la envía ya; responde el estado o `{"error":"…"}` con el motivo |
 | `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
-| `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado). Permite lecturas desde otros equipos (CORS) |
+| `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"retrying":false,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`ok`: hay una lectura válida de hace menos de 2 min; `retrying`: la última lectura falló y se usa la anterior; `extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado). Permite lecturas desde otros equipos (CORS) |
 | `GET /config` | Control de humedad: `{"enabled":true,"humMin":85,"humMax":95}` |
 | `POST /config` | Parámetros de formulario `enabled` (`1`/`0`, opcional), `humMin` y `humMax`; responde la config guardada o 400 si no es válida |
 | `GET /heater` | `{"enabled":false,"tempMin":20.0,"tempMax":24.0}` |

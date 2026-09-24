@@ -569,6 +569,9 @@
 
   .card .badge.error { display: none; }
   .sensor-error .card .badge.error { display: inline-flex; }
+  .card .badge.retry,
+  .sensor-error .card .badge.retry { display: none; }
+  .sensor-retry:not(.sensor-error) .card .badge.retry { display: inline-flex; }
 
   footer {
     display: flex;
@@ -644,6 +647,7 @@
             Temperatura
           </span>
           <span class="badge error">ERROR SENSOR</span>
+          <span class="badge error retry" title="La última lectura falló; se sigue usando la anterior hasta 2 minutos">REINTENTANDO</span>
         </div>
         <div><span class="value" id="temperature">—</span><span class="unit">°C</span></div>
       </section>
@@ -654,6 +658,7 @@
             Humedad
           </span>
           <span class="badge error">ERROR SENSOR</span>
+          <span class="badge error retry" title="La última lectura falló; se sigue usando la anterior hasta 2 minutos">REINTENTANDO</span>
         </div>
         <div><span class="value" id="humidity">—</span><span class="unit">%</span></div>
       </section>
@@ -1177,6 +1182,7 @@
 
   function renderSensors(data) {
     document.body.classList.toggle("sensor-error", !data.ok);
+    document.body.classList.toggle("sensor-retry", !!data.retrying);
     $("temperature").textContent = data.ok ? fmt(data.temperature) : "—";
     $("humidity").textContent = data.ok ? fmt(data.humidity) : "—";
     $("checked").textContent = new Date().toLocaleTimeString("es-AR");

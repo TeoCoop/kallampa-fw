@@ -27,6 +27,7 @@ static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
 static const bool RELAY_ACTIVE_HIGH = false;  // Estos módulos se activan con señal baja (LOW = relé cerrado)
 static const unsigned long EXTRACTOR_MAX_SEC = 86400;  // 24 h
 static const unsigned long DHT_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas
+static const unsigned long SENSOR_GRACE_MS = 2UL * 60 * 1000;  // Si falla, se sigue con la última lectura hasta 2 min
 static const unsigned long DISCOVERY_INTERVAL_MS = 30000;
 static const uint32_t DISCOVERY_TIMEOUT_MS = 3000;
 static const size_t MAX_PEERS = 20;
@@ -57,7 +58,11 @@ unsigned long lastDiscoveryAt = 0;
 
 float lastTemperature = NAN;
 float lastHumidity = NAN;
-bool lastReadOk = false;
+bool lastReadOk = false;      // Hay una lectura válida de hace menos de SENSOR_GRACE_MS (la usan los controles)
+bool hasValidRead = false;
+unsigned long lastValidAt = 0;
+unsigned long sensorFailingSince = 0;  // 0 = el sensor está leyendo bien
+bool sensorGraceExpired = false;
 unsigned long lastReadAt = 0;
 
 bool humEnabled = true;
@@ -203,13 +208,28 @@ void readSensor() {
   float h = dht.readHumidity();
   // Además de NaN, se descartan valores imposibles: con el cableado mal (ej. sin pull-up)
   // el DHT22 puede devolver todo en cero y pasar el checksum
-  lastReadOk = !isnan(t) && !isnan(h) && !(t == 0 && h == 0) &&
+  bool valid = !isnan(t) && !isnan(h) && !(t == 0 && h == 0) &&
                h >= 0 && h <= 100 && t >= -40 && t <= 80;
-  if (lastReadOk) {
+  if (valid) {
     lastTemperature = t;
     lastHumidity = h;
+    hasValidRead = true;
+    lastValidAt = millis();
+    if (sensorFailingSince) {
+      logMsg("DHT22: volvió a leer después de %lu s sin lecturas", (millis() - sensorFailingSince) / 1000);
+      sensorFailingSince = 0;
+    }
+    sensorGraceExpired = false;
   } else {
+    if (!sensorFailingSince) sensorFailingSince = millis();
     logMsg("Error leyendo el DHT22 (t=%.1f h=%.1f)", t, h);
+  }
+
+  // Una falla suelta no apaga nada: los controles siguen con la última lectura válida hasta 2 min
+  lastReadOk = hasValidRead && millis() - lastValidAt < SENSOR_GRACE_MS;
+  if (!lastReadOk && sensorFailingSince && !sensorGraceExpired) {
+    sensorGraceExpired = true;
+    logMsg("DHT22 sin lecturas por %lu min: se apagan humidificador y calefacción", SENSOR_GRACE_MS / 60000);
   }
   updateHumidifier();
   updateHeater();
@@ -381,6 +401,8 @@ void handleSensors() {
   json += isnan(lastHumidity) ? "null" : String(lastHumidity, 1);
   json += ",\"ok\":";
   json += lastReadOk ? "true" : "false";
+  json += ",\"retrying\":";  // Falló la última lectura pero todavía se usa la anterior
+  json += (lastReadOk && sensorFailingSince) ? "true" : "false";
   json += ",\"humidifier\":";
   json += humidifierOn ? "true" : "false";
   json += ",\"heater\":";
