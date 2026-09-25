@@ -441,6 +441,9 @@
 
   .form-actions button.secondary { height: 36px; padding: 0 14px; font-size: 14px; }
 
+  .heat-status { display: grid; gap: 8px; margin-top: 12px; }
+  .heat-status p { margin: 0; }
+
   @media (max-width: 480px) {
     .history-grid { grid-template-columns: 1fr; }
   }
@@ -691,7 +694,7 @@
           <span class="title">Calefacción</span>
           <span class="badge off" id="heat-badge">DESACTIVADO</span>
         </div>
-        <p class="help">El generador de calor se enciende por debajo de la mínima y se apaga al llegar a la máxima.</p>
+        <p class="help">Mantiene la temperatura en el medio entre la mínima y la máxima. Primero aprende cómo responde la carpa (prende en la mínima y apaga en la máxima un par de veces) y después regula prendiendo el calefactor de a ratos cortos.</p>
         <label class="switch">
           <input type="checkbox" id="heat-enabled">
           <span class="track"></span>
@@ -709,6 +712,13 @@
           <button type="submit" id="heat-save">Guardar</button>
         </form>
         <p class="message" id="heat-message" role="status"></p>
+        <div class="heat-status" id="heat-status" hidden>
+          <p id="heat-mode"></p>
+          <p class="help" id="heat-model"></p>
+          <div class="form-actions">
+            <button type="button" class="secondary" id="heat-relearn">Volver a aprender</button>
+          </div>
+        </div>
       </section>
       <section class="card control">
         <div class="card-header">
@@ -988,6 +998,7 @@
       try {
         const res = await fetch(url, { cache: "no-store" });
         const cfg = await res.json();
+        ctl.cfg = cfg;
         ctl.enabled = cfg.enabled;
         ctl.min = cfg[minParam];
         ctl.max = cfg[maxParam];
@@ -1018,6 +1029,7 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Error al guardar.");
+        ctl.cfg = data;
         ctl.enabled = data.enabled;
         ctl.min = data[minParam];
         ctl.max = data[maxParam];
@@ -1182,6 +1194,48 @@
     $("devices-help").hidden = devices.length > 1;
   }
 
+  // Estado de la calefacción adaptativa: aprendiendo o regulando, y lo que aprendió de la carpa
+  const dec = (n, d) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
+  let heatStatusMode = null;
+
+  function renderHeatStatus(data) {
+    const cfg = heating.cfg;
+    $("heat-status").hidden = !cfg || !heating.enabled;
+    if (!cfg || !heating.enabled) return;
+    // Cambió de modo en el equipo: se vuelve a pedir lo aprendido
+    if (data.heatMode && data.heatMode !== heatStatusMode) {
+      if (heatStatusMode !== null) heating.load();
+      heatStatusMode = data.heatMode;
+    }
+    const target = dec((heating.min + heating.max) / 2, 1) + " °C";
+    $("heat-mode").textContent = !data.ok ? "Sin lecturas del sensor: calefacción apagada."
+      : data.heatMode === "pi"
+        ? "Regulando a " + target + (data.heatPower !== null && data.heatPower !== undefined ? " · potencia " + data.heatPower + " %" : "") + "."
+        : "Aprendiendo cómo responde la carpa: ciclo " + Math.min((data.heatLearnCycle ?? 0) + 1, cfg.learnCycles) + " de " + cfg.learnCycles + ".";
+    const m = cfg.model;
+    $("heat-model").textContent = !m ? "Todavía no aprendió nada de esta carpa."
+      : (data.heatMode === "pi" ? "Aprendido" : "Aprendido antes") + ": tarda " + dec(m.deadSec / 60, 1) + " min en notar el calefactor"
+        + " · sube " + dec(m.riseRate, 2) + " °C/min prendido · baja " + dec(m.lossRate, 2) + " °C/min apagado"
+        + " · prende una parte de cada " + dec(m.windowSec / 60, 1) + " min.";
+  }
+
+  $("heat-relearn").addEventListener("click", async () => {
+    $("heat-relearn").disabled = true;
+    try {
+      const res = await fetch("/heater-learn", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error.");
+      heating.cfg = data;
+      heatStatusMode = data.mode;
+      showMessage("Vuelve a aprender desde cero.", "ok", "heat-message");
+      update();
+    } catch (err) {
+      showMessage(errorText(err), "error", "heat-message");
+    } finally {
+      $("heat-relearn").disabled = false;
+    }
+  });
+
   function renderSensors(data) {
     document.body.classList.toggle("sensor-error", !data.ok);
     document.body.classList.toggle("sensor-retry", !!data.retrying);
@@ -1190,6 +1244,7 @@
     $("checked").textContent = new Date().toLocaleTimeString("es-AR");
     renderDeviceBadge("hum-badge", humidity.enabled, data.humidifier);
     renderDeviceBadge("heat-badge", heating.enabled, data.heater);
+    renderHeatStatus(data);
     renderExtractor(data.extractor, data.extractorRemaining ?? null);
   }
 

@@ -4,7 +4,7 @@
 #   ./upload-ota.sh                                  → busca los equipos de la red y pregunta
 set -u
 
-PIO=~/.platformio/penv/bin/pio
+PIO=${PIO:-~/.platformio/penv/bin/pio}  # Se puede cambiar: PIO=/otra/ruta/pio ./upload-ota.sh
 
 cd "$(dirname "$0")"
 

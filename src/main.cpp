@@ -39,6 +39,11 @@ static const size_t HISTORY_QUEUE_MAX = 144;       // Máximo de muestras pendie
 static const uint16_t HISTORY_HTTP_TIMEOUT_MS = 4000;
 static const unsigned long HISTORY_TLS_TIMEOUT_SEC = 8;
 static const time_t TIME_VALID_AFTER = 1700000000;  // Antes de esto el reloj todavía no se sincronizó por NTP
+static const size_t TEMP_SMOOTH_N = 6;               // Lecturas promediadas para el control (~15 s)
+static const uint8_t HEAT_LEARN_CYCLES = 2;          // Ciclos prendido/apagado que se miden antes de regular
+static const unsigned long HEAT_MIN_PULSE_MS = 10000;  // Pulso mínimo del relé (prendido o apagado)
+static const uint8_t HEAT_LIMIT_HITS_RELEARN = 3;    // Salidas del rango que hacen volver a aprender...
+static const unsigned long HEAT_LIMIT_HITS_WINDOW_MS = 3UL * 3600 * 1000;  // ...si pasan dentro de 3 h
 
 WebServer server(80);
 DHT dht(DHT_PIN, DHT22);
@@ -78,6 +83,37 @@ float tempMax = 24.0;
 bool heaterOn = false;
 unsigned long heaterOnSince = 0;
 unsigned long heaterOnMs = 0;
+
+// Temperatura suavizada para el control (promedio de las últimas lecturas válidas)
+float tempRing[TEMP_SMOOTH_N];
+size_t tempRingCount = 0;
+size_t tempRingPos = 0;
+
+// Calefacción adaptativa: primero aprende cómo responde la carpa (con histéresis entre mínima y
+// máxima) y después regula con un PI que prende el relé una parte de cada ventana de tiempo
+enum HeatMode { HEAT_LEARNING, HEAT_PI };
+HeatMode heatMode = HEAT_LEARNING;
+bool modelValid = false;
+float modelDeadSec = 0;  // Retardo entre prender/apagar y que el sensor lo note
+float modelGain = 0;     // °C/min que sube con el calefactor al 100 % (sin contar pérdidas)
+float modelLoss = 0;     // °C/min que baja con el calefactor apagado
+
+// Ciclo de aprendizaje en curso
+enum LearnPhase { CYC_IDLE, CYC_ON, CYC_OFF };
+LearnPhase cycPhase = CYC_IDLE;
+unsigned long cycOnAt = 0, cycLowAt = 0, cycOffAt = 0, cycPeakAt = 0;
+float cycLow = 0, cycOffTemp = 0, cycPeak = 0;
+uint8_t learnCount = 0;
+float learnDeadSum = 0, learnGainSum = 0, learnLossSum = 0;
+
+// Regulación PI
+float piIntegral = 0;  // % de potencia
+float heatPower = 0;   // % de la ventana actual que va prendido
+unsigned long windowStart = 0;
+unsigned long windowOnMs = 0;
+int heatLimit = 0;     // 1 = por encima de la máxima, -1 = por debajo de la mínima
+uint8_t limitHits = 0;
+unsigned long firstLimitHitAt = 0;
 
 bool extEnabled = false;
 unsigned long extOffSec = 900;
@@ -192,14 +228,200 @@ void setHeater(bool on) {
   logMsg(on ? "Calefacción ENCENDIDA" : "Calefacción APAGADA");
 }
 
-// Histéresis: enciende por debajo de la mínima, apaga al llegar a la máxima
+float controlTemperature() {
+  if (!tempRingCount) return lastTemperature;
+  float sum = 0;
+  for (size_t i = 0; i < tempRingCount; i++) sum += tempRing[i];
+  return sum / tempRingCount;
+}
+
+int currentHeatLimit() {
+  return lastTemperature >= tempMax ? 1 : lastTemperature < tempMin ? -1 : 0;
+}
+
+float heatSetpoint() {
+  return (tempMin + tempMax) / 2;
+}
+
+// Ventana del PWM lento: más larga cuanto más lenta es la carpa, para no gastar el relé
+unsigned long heatWindowMs() {
+  return (unsigned long)constrain(modelDeadSec * 2, 240.0f, 600.0f) * 1000UL;
+}
+
+// Ajuste del PI por reglas SIMC, con la carpa vista como un proceso integrador con retardo:
+// sube modelGain °C/min al 100 % y el sensor tarda modelDeadSec (+ media ventana) en notarlo
+float heatKc() {  // % de potencia por °C de diferencia
+  float deadMin = modelDeadSec / 60 + heatWindowMs() / 120000.0f;
+  return 100 / (modelGain * 2 * deadMin);
+}
+
+float heatTiMin() {  // Tiempo integral en minutos
+  return 8 * (modelDeadSec / 60 + heatWindowMs() / 120000.0f);
+}
+
+void startHeatPi() {
+  heatMode = HEAT_PI;
+  // Arranca con la potencia que compensa las pérdidas medidas, sin salto
+  piIntegral = constrain(100 * modelLoss / modelGain, 0.0f, 100.0f);
+  heatPower = piIntegral;
+  heatLimit = currentHeatLimit();
+  limitHits = 0;
+  windowStart = millis() - heatWindowMs();  // Calcula la primera ventana ya
+  logMsg("Calefacción: regulando a %.1f °C (Kc %.0f %%/°C, Ti %.0f min, ventana %lu s)",
+         heatSetpoint(), heatKc(), heatTiMin(), heatWindowMs() / 1000);
+}
+
+void startHeatLearning() {
+  heatMode = HEAT_LEARNING;
+  cycPhase = CYC_IDLE;
+  learnCount = 0;
+  learnDeadSum = learnGainSum = learnLossSum = 0;
+  logMsg("Calefacción: aprendiendo cómo responde la carpa (%u ciclos)", HEAT_LEARN_CYCLES);
+}
+
+// Cierra un ciclo prendido → apagado → prendido y guarda lo que midió
+void finishLearningCycle(float t, unsigned long now) {
+  cycPhase = CYC_IDLE;
+  float onMin = (cycOffAt - cycLowAt) / 60000.0f;
+  float rise = cycOffTemp - cycLow;
+  float coolMin = (now - cycPeakAt) / 60000.0f;
+  float fall = cycPeak - t;
+  if (onMin < 1 || rise < 0.2f || coolMin < 3 || fall < 0.1f) {
+    logMsg("Aprendizaje: ciclo descartado (subió %.1f °C en %.1f min, bajó %.1f °C en %.1f min)", rise, onMin, fall, coolMin);
+    return;
+  }
+  float loss = fall / coolMin;
+  float gain = rise / onMin + loss;
+  // Retardo: lo que tarda en empezar a subir al prender y en dejar de subir al apagar
+  float dead = constrain(((cycLowAt - cycOnAt) + (cycPeakAt - cycOffAt)) / 2000.0f, 20.0f, 900.0f);
+  learnDeadSum += dead;
+  learnGainSum += gain;
+  learnLossSum += loss;
+  learnCount++;
+  logMsg("Aprendizaje %u/%u: retardo %.0f s, sube %.2f °C/min, baja %.2f °C/min, se pasó %.1f °C",
+         learnCount, HEAT_LEARN_CYCLES, dead, gain - loss, loss, cycPeak - cycOffTemp);
+  if (learnCount < HEAT_LEARN_CYCLES) return;
+
+  modelDeadSec = learnDeadSum / learnCount;
+  modelGain = learnGainSum / learnCount;
+  modelLoss = learnLossSum / learnCount;
+  modelValid = true;
+  prefs.putFloat("hDead", modelDeadSec);
+  prefs.putFloat("hGain", modelGain);
+  prefs.putFloat("hLoss", modelLoss);
+  startHeatPi();
+}
+
+// Mide los ciclos de la histéresis: mínimo después de prender, pico después de apagar
+void trackLearningCycle(float t) {
+  unsigned long now = millis();
+  if (heaterOn) {
+    if (cycPhase == CYC_OFF) finishLearningCycle(t, now);
+    if (heatMode != HEAT_LEARNING) return;
+    if (cycPhase != CYC_ON) {
+      cycPhase = CYC_ON;
+      cycOnAt = now;
+      cycLow = t;
+      cycLowAt = now;
+    } else if (t <= cycLow) {  // Último momento en el mínimo = cuando empieza a subir
+      cycLow = t;
+      cycLowAt = now;
+    }
+  } else if (cycPhase == CYC_ON) {
+    cycPhase = CYC_OFF;
+    cycOffAt = now;
+    cycOffTemp = t;
+    cycPeak = t;
+    cycPeakAt = now;
+  } else if (cycPhase == CYC_OFF && t > cycPeak) {  // Primer momento en el pico = cuando deja de subir
+    cycPeak = t;
+    cycPeakAt = now;
+  }
+}
+
+// Si se sale seguido del rango, lo aprendido ya no sirve (cambió la carpa o el calefactor)
+void countLimitHit() {
+  unsigned long now = millis();
+  if (!limitHits || now - firstLimitHitAt > HEAT_LIMIT_HITS_WINDOW_MS) {
+    limitHits = 0;
+    firstLimitHitAt = now;
+  }
+  if (++limitHits >= HEAT_LIMIT_HITS_RELEARN) {
+    logMsg("Calefacción: se salió del rango %u veces en %lu h, vuelve a aprender", limitHits, HEAT_LIMIT_HITS_WINDOW_MS / 3600000);
+    startHeatLearning();
+  }
+}
+
+void updateHeatPi(float t) {
+  unsigned long now = millis();
+  unsigned long window = heatWindowMs();
+
+  // La mínima y la máxima siguen siendo límites: fuera del rango manda la histéresis
+  int limit = currentHeatLimit();
+  if (limit != heatLimit) {
+    heatLimit = limit;
+    if (limit) {
+      logMsg("Calefacción: %s, %s", limit > 0 ? "llegó a la máxima" : "bajó de la mínima", limit > 0 ? "se apaga" : "se prende");
+      countLimitHit();
+      if (heatMode != HEAT_PI) {
+        setHeater(limit < 0);
+        return;
+      }
+    } else {
+      windowStart = now - window;  // Al volver al rango recalcula ya
+    }
+  }
+  if (limit) {
+    heatPower = limit < 0 ? 100 : 0;
+    setHeater(limit < 0);
+    return;
+  }
+
+  if (now - windowStart >= window) {
+    windowStart = now;
+    float error = heatSetpoint() - t;
+    float kc = heatKc();
+    float integral = constrain(piIntegral + kc * error * (window / 60000.0f) / heatTiMin(), 0.0f, 100.0f);
+    float out = kc * error + integral;
+    // Anti-windup: el integral no sigue creciendo si la salida ya está saturada para ese lado
+    if (!((out > 100 && error > 0) || (out < 0 && error < 0))) piIntegral = integral;
+    heatPower = constrain(kc * error + piIntegral, 0.0f, 100.0f);
+    windowOnMs = heatPower / 100 * window;
+    if (windowOnMs < HEAT_MIN_PULSE_MS) windowOnMs = 0;
+    else if (window - windowOnMs < HEAT_MIN_PULSE_MS) windowOnMs = window;
+  }
+  setHeater(now - windowStart < windowOnMs);
+}
+
 void updateHeater() {
   if (!heatEnabled || !lastReadOk) {
     setHeater(false);
-  } else if (lastTemperature < tempMin) {
+    cycPhase = CYC_IDLE;
+    return;
+  }
+  float t = controlTemperature();
+  if (heatMode == HEAT_PI) {
+    updateHeatPi(t);
+    return;
+  }
+  // Aprendiendo: histéresis, enciende por debajo de la mínima y apaga al llegar a la máxima
+  if (lastTemperature < tempMin) {
     setHeater(true);
   } else if (lastTemperature >= tempMax) {
     setHeater(false);
+  }
+  trackLearningCycle(t);
+}
+
+// Después de cambiar la configuración se decide desde cero
+void restartHeater() {
+  if (heatMode == HEAT_PI) {
+    heatLimit = currentHeatLimit();
+    windowStart = millis() - heatWindowMs();
+    updateHeater();
+  } else {
+    cycPhase = CYC_IDLE;
+    setHeater(heatEnabled && lastReadOk && lastTemperature < tempMin);
   }
 }
 
@@ -213,6 +435,9 @@ void readSensor() {
   if (valid) {
     lastTemperature = t;
     lastHumidity = h;
+    tempRing[tempRingPos] = t;
+    tempRingPos = (tempRingPos + 1) % TEMP_SMOOTH_N;
+    if (tempRingCount < TEMP_SMOOTH_N) tempRingCount++;
     hasValidRead = true;
     lastValidAt = millis();
     if (sensorFailingSince) {
@@ -407,6 +632,12 @@ void handleSensors() {
   json += humidifierOn ? "true" : "false";
   json += ",\"heater\":";
   json += heaterOn ? "true" : "false";
+  json += ",\"heatMode\":";
+  json += heatMode == HEAT_PI ? "\"pi\"" : "\"learning\"";
+  json += ",\"heatPower\":";  // % de potencia del PI (null si no está regulando)
+  json += heatEnabled && lastReadOk && heatMode == HEAT_PI ? String(heatPower, 0) : "null";
+  json += ",\"heatLearnCycle\":";
+  json += String(learnCount);
   json += ",\"extractor\":";
   json += extractorOn ? "true" : "false";
   json += ",\"extractorRemaining\":";
@@ -458,9 +689,25 @@ void handlePostConfig() {
 }
 
 String heaterJson() {
-  return "{\"enabled\":" + String(heatEnabled ? "true" : "false") +
-         ",\"tempMin\":" + String(tempMin, 1) +
-         ",\"tempMax\":" + String(tempMax, 1) + "}";
+  String json = "{\"enabled\":" + String(heatEnabled ? "true" : "false") +
+                ",\"tempMin\":" + String(tempMin, 1) +
+                ",\"tempMax\":" + String(tempMax, 1) +
+                ",\"mode\":" + String(heatMode == HEAT_PI ? "\"pi\"" : "\"learning\"") +
+                ",\"learnCycle\":" + String(learnCount) +
+                ",\"learnCycles\":" + String(HEAT_LEARN_CYCLES) +
+                ",\"setpoint\":" + String(heatSetpoint(), 2) +
+                ",\"model\":";
+  if (modelValid) {
+    json += "{\"deadSec\":" + String(modelDeadSec, 0) +
+            ",\"riseRate\":" + String(modelGain - modelLoss, 3) +
+            ",\"lossRate\":" + String(modelLoss, 3) +
+            ",\"windowSec\":" + String(heatWindowMs() / 1000) +
+            ",\"kc\":" + String(heatKc(), 1) +
+            ",\"tiMin\":" + String(heatTiMin(), 1) + "}";
+  } else {
+    json += "null";
+  }
+  return json + "}";
 }
 
 void handleGetHeater() {
@@ -485,8 +732,14 @@ void handlePostHeater() {
   prefs.putFloat("tempMin", tempMin);
   prefs.putFloat("tempMax", tempMax);
   logMsg("Calefacción: activo=%d tempMin=%.1f tempMax=%.1f", heatEnabled, tempMin, tempMax);
-  // Con la config nueva se decide desde cero: solo queda encendida si está por debajo de la mínima
-  setHeater(heatEnabled && lastReadOk && lastTemperature < tempMin);
+  restartHeater();
+  server.send(200, "application/json", heaterJson());
+}
+
+// Olvida lo aprendido de la carpa y vuelve a medir
+void handleHeaterLearn() {
+  startHeatLearning();
+  restartHeater();
   server.send(200, "application/json", heaterJson());
 }
 
@@ -918,6 +1171,18 @@ void setup() {
   heatEnabled = prefs.getBool("heatEn", heatEnabled);
   tempMin = prefs.getFloat("tempMin", tempMin);
   tempMax = prefs.getFloat("tempMax", tempMax);
+  // Lo aprendido de la carpa sobrevive reinicios; sin eso arranca aprendiendo
+  if (prefs.isKey("hGain")) {
+    modelDeadSec = prefs.getFloat("hDead", 0);
+    modelGain = prefs.getFloat("hGain", 0);
+    modelLoss = prefs.getFloat("hLoss", 0);
+    modelValid = modelDeadSec > 0 && modelGain > 0 && modelLoss >= 0;
+  }
+  if (modelValid) {
+    logMsg("Calefacción: modelo guardado (retardo %.0f s, sube %.2f °C/min, baja %.2f °C/min)",
+           modelDeadSec, modelGain - modelLoss, modelLoss);
+    startHeatPi();
+  }
   extEnabled = prefs.getBool("extEn", extEnabled);
   extOffSec = prefs.getULong("extOff", extOffSec);
   extOnSec = prefs.getULong("extOn", extOnSec);
@@ -971,6 +1236,7 @@ void setup() {
   server.on("/config", HTTP_POST, handlePostConfig);
   server.on("/heater", HTTP_GET, handleGetHeater);
   server.on("/heater", HTTP_POST, handlePostHeater);
+  server.on("/heater-learn", HTTP_POST, handleHeaterLearn);
   server.on("/extractor", HTTP_GET, handleGetExtractor);
   server.on("/extractor", HTTP_POST, handlePostExtractor);
   server.begin();

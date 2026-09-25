@@ -41,13 +41,17 @@ Desde la página se configuran el mínimo y el máximo de humedad y un interrupt
 
 ## Calefacción
 
-Mismo funcionamiento que el control de humedad, pero con la temperatura y el relé de calefacción. Se configuran la temperatura mínima y máxima (de 0 a 50 °C, en pasos de 0,5) y el interruptor **Control activo** (por defecto desactivado, 20 °C y 24 °C):
+Se configuran la temperatura mínima y máxima (de 0 a 50 °C, en pasos de 0,5) y el interruptor **Control activo** (por defecto desactivado, 20 °C y 24 °C). El control apunta al **medio** entre la mínima y la máxima y se adapta solo a cada carpa y calefactor:
+
+1. **Aprendiendo** (la primera vez, o con el botón **Volver a aprender**): funciona como la humedad, prende por debajo de la mínima y apaga al llegar a la máxima. En cada ciclo mide cuánto tarda la carpa en notar el calefactor (el retardo que la hace pasarse de la máxima), qué tan rápido sube prendido y qué tan rápido baja apagado. Después de 2 ciclos completos pasa a regular.
+2. **Regulando**: un control PI prende el calefactor una parte de cada ventana (por ejemplo 40 s de cada 4 min) en vez de tandas largas, así nunca junta tanto calor como para pasarse. La ventana y los parámetros salen de lo que aprendió (reglas SIMC); la parte integral compensa sola los cambios de temperatura de afuera. El panel muestra la potencia (% de cada ventana).
+
+Siempre se cumple:
 
 - Control desactivado → calefacción apagada.
-- Temperatura por debajo de la mínima → calefacción encendida.
-- Temperatura igual o mayor a la máxima → calefacción apagada.
-- Entre los dos valores mantiene el estado anterior.
-- Al guardar una configuración nueva se reevalúa desde cero: queda encendida solo si la temperatura está por debajo de la nueva mínima.
+- Temperatura igual o mayor a la máxima → calefacción apagada; por debajo de la mínima → prendida.
+- Si se sale del rango 3 veces en 3 horas, se asume que lo aprendido ya no sirve (se cambió el calefactor, la carpa, etc.) y vuelve a aprender.
+- Lo aprendido se guarda en el ESP32 y sobrevive reinicios.
 - Si el DHT22 deja de leer, se sigue usando la última lectura válida hasta **2 minutos**; si en ese tiempo no vuelve, la calefacción se apaga por seguridad.
 
 ## Extractor
