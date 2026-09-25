@@ -52,6 +52,7 @@ Siempre se cumple:
 - Temperatura igual o mayor a la máxima → calefacción apagada; por debajo de la mínima → prendida.
 - Si se sale del rango 3 veces en 3 horas, se asume que lo aprendido ya no sirve (se cambió el calefactor, la carpa, etc.) y vuelve a aprender.
 - Lo aprendido se guarda en el ESP32 y sobrevive reinicios.
+- En **Ajustar** también se carga la potencia del calefactor (por defecto 150 W); el historial la usa para estimar el consumo en kWh.
 - Si el DHT22 deja de leer, se sigue usando la última lectura válida hasta **2 minutos**; si en ese tiempo no vuelve, la calefacción se apaga por seguridad.
 
 ## Extractor

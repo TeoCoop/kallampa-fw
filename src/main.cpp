@@ -80,6 +80,7 @@ unsigned long humidifierOnMs = 0;  // Tiempo encendido acumulado desde la últim
 bool heatEnabled = false;
 float tempMin = 20.0;
 float tempMax = 24.0;
+uint16_t heaterWatts = 150;  // Potencia del calefactor, solo para estimar el consumo en el panel
 bool heaterOn = false;
 unsigned long heaterOnSince = 0;
 unsigned long heaterOnMs = 0;
@@ -188,7 +189,8 @@ const char *resetReasonText() {
 extern const char index_html[] asm("_binary_web_index_html_start");
 
 void handleRoot() {
-  server.send(200, "text/html", index_html);
+  // send_P lo manda desde la flash de a pedazos: copiarlo a un String (~80 KB) puede no entrar en RAM
+  server.send_P(200, "text/html", index_html, strlen(index_html));
 }
 
 void handleStatus() {
@@ -692,6 +694,7 @@ String heaterJson() {
   String json = "{\"enabled\":" + String(heatEnabled ? "true" : "false") +
                 ",\"tempMin\":" + String(tempMin, 1) +
                 ",\"tempMax\":" + String(tempMax, 1) +
+                ",\"watts\":" + String(heaterWatts) +
                 ",\"mode\":" + String(heatMode == HEAT_PI ? "\"pi\"" : "\"learning\"") +
                 ",\"learnCycle\":" + String(learnCount) +
                 ",\"learnCycles\":" + String(HEAT_LEARN_CYCLES) +
@@ -725,9 +728,16 @@ void handlePostHeater() {
     server.send(400, "application/json", "{\"error\":\"La mínima debe ser menor que la máxima (0 a 50 °C)\"}");
     return;
   }
+  long newWatts = server.hasArg("watts") ? server.arg("watts").toInt() : heaterWatts;
+  if (newWatts < 1 || newWatts > 5000) {
+    server.send(400, "application/json", "{\"error\":\"La potencia del calefactor tiene que ser de 1 a 5000 W\"}");
+    return;
+  }
   heatEnabled = server.arg("enabled") == "1";
   tempMin = newMin;
   tempMax = newMax;
+  heaterWatts = newWatts;
+  prefs.putUShort("heatW", heaterWatts);
   prefs.putBool("heatEn", heatEnabled);
   prefs.putFloat("tempMin", tempMin);
   prefs.putFloat("tempMax", tempMax);
@@ -1028,7 +1038,8 @@ String fluxString(const String &value) {
   return out + "\"";
 }
 
-// Datos para el gráfico de calefacción: temperatura promedio y segundos prendida por ventana, en CSV
+// Datos para los gráficos, en CSV: valor promedio y segundos prendido por ventana.
+// kind=temp (por defecto): temperatura y calefacción; kind=hum: humedad y humidificador
 void handleHistory() {
   if (!historyConfigured()) {
     server.send(409, "application/json", "{\"error\":\"Configurá el historial (InfluxDB) para ver gráficos\"}");
@@ -1044,6 +1055,9 @@ void handleHistory() {
     stepMin = 5;
   }
   uint16_t windowMin = max(stepMin, historyIntervalMin);
+  bool hum = server.arg("kind") == "hum";
+  String valueField = hum ? "humedad" : "temperatura";
+  String onField = hum ? "humidificador_seg" : "calefaccion_seg";
 
   String every = String(windowMin) + "m";
   String query =
@@ -1051,10 +1065,10 @@ void handleHistory() {
       "  |> range(start: -" + range + ")\n"
       "  |> filter(fn: (r) => r.id == " + fluxString(deviceId) + ")\n"
       "t = base\n"
-      "  |> filter(fn: (r) => r._measurement == \"ambiente\" and r._field == \"temperatura\")\n"
+      "  |> filter(fn: (r) => r._measurement == \"ambiente\" and r._field == \"" + valueField + "\")\n"
       "  |> aggregateWindow(every: " + every + ", fn: mean, createEmpty: false, timeSrc: \"_start\")\n"
       "h = base\n"
-      "  |> filter(fn: (r) => r._measurement == \"actuadores\" and r._field == \"calefaccion_seg\")\n"
+      "  |> filter(fn: (r) => r._measurement == \"actuadores\" and r._field == \"" + onField + "\")\n"
       "  |> aggregateWindow(every: " + every + ", fn: sum, createEmpty: false, timeSrc: \"_start\")\n"
       // Los segundos son enteros y la temperatura no: sin esto el pivot choca por tipos distintos en _value
       "  |> toFloat()\n"
@@ -1171,6 +1185,7 @@ void setup() {
   heatEnabled = prefs.getBool("heatEn", heatEnabled);
   tempMin = prefs.getFloat("tempMin", tempMin);
   tempMax = prefs.getFloat("tempMax", tempMax);
+  heaterWatts = prefs.getUShort("heatW", heaterWatts);
   // Lo aprendido de la carpa sobrevive reinicios; sin eso arranca aprendiendo
   if (prefs.isKey("hGain")) {
     modelDeadSec = prefs.getFloat("hDead", 0);

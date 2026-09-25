@@ -88,31 +88,194 @@
   header {
     position: sticky;
     top: 0;
+    z-index: 5;
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     height: 56px;
-    padding: 0 16px;
+    padding: 0 12px 0 6px;
     border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--background) 80%, transparent);
     backdrop-filter: blur(8px);
   }
 
-  .brand {
+  .switcher { position: relative; min-width: 0; }
+
+  button.brand {
     display: flex;
     align-items: center;
     gap: 8px;
+    max-width: 100%;
+    height: 36px;
+    padding: 0 10px;
+    background: transparent;
     font-size: 16px;
     font-weight: 600;
     color: var(--heading);
   }
+
+  button.brand:hover { background: var(--muted); opacity: 1; }
+  #device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .caret { font-size: 12px; color: var(--muted-foreground); }
+
+  .menu {
+    position: absolute;
+    top: 44px;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(440px, calc(100vw - 12px));
+    padding: 14px 16px;
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: 0 0 0 1px var(--ring), var(--shadow-soft);
+  }
+
+  .menu[hidden] { display: none; }
+  .menu-title { font-size: 12px; font-weight: 600; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .header-right { display: flex; flex-shrink: 0; align-items: center; gap: 12px; }
+  .conn { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
+
+  button.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    padding: 0;
+    background: transparent;
+    color: var(--foreground);
+  }
+
+  button.icon-button:hover { background: var(--muted); opacity: 1; }
+  button.icon-button[aria-pressed="true"] { background: var(--ok-bg); color: var(--ok-fg); }
+  button.icon-button svg { width: 18px; height: 18px; }
+
+  .section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 28px 4px 10px;
+  }
+
+  .section-head:first-child { margin-top: 0; }
+
+  .section-head h2 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .section-head .help { font-size: 12px; }
+
+  .reading-foot {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--muted-foreground);
+  }
+
+  .actuator { color: var(--foreground); font-weight: 500; }
+  .actuator:empty { display: none; }
+
+  .meter {
+    height: 6px;
+    margin-top: 4px;
+    border-radius: 999px;
+    background: var(--muted);
+    overflow: hidden;
+  }
+
+  .meter[hidden] { display: none; }
+  .meter span { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--ok); transition: width 0.4s; }
+
+  .card.strip {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 14px 20px;
+  }
+
+  .status-line { color: var(--heading); font-weight: 500; }
+  .status-line + .help:empty { display: none; }
+
+  details.adjust > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted-foreground);
+    font-weight: 500;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+
+  details.adjust > summary::-webkit-details-marker { display: none; }
+  details.adjust > summary::before { content: "▸"; font-size: 11px; transition: transform 0.15s; }
+  details.adjust[open] > summary::before { transform: rotate(90deg); }
+  details.adjust > summary:hover { color: var(--foreground); }
+  details.adjust > summary:focus-visible { outline: none; border-radius: 6px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent); }
+  .adjust-body { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+
+  .tabs {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: calc(var(--radius) * 0.8);
+    background: var(--muted);
+  }
+
+  .tabs button {
+    height: 28px;
+    padding: 0 12px;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .tabs button[aria-selected="true"] { background: var(--card); color: var(--heading); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  .stats:empty { display: none; }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px;
+    border-radius: calc(var(--radius) * 0.8);
+    background: color-mix(in srgb, var(--muted) 60%, transparent);
+  }
+
+  .stat-label { font-size: 12px; color: var(--muted-foreground); }
+  .stat-value { font-size: 20px; font-weight: 700; color: var(--heading); font-variant-numeric: tabular-nums; }
+  .stat-sub { font-size: 12px; color: var(--muted-foreground); }
 
   main {
     flex: 1;
     width: 100%;
     max-width: 44rem;
     margin: 0 auto;
-    padding: 32px 16px;
+    padding: 24px 16px 40px;
   }
+
+  main[hidden] { display: none; }
 
   .grid {
     display: grid;
@@ -273,7 +436,6 @@
 
   .switch {
     display: inline-flex;
-    align-self: flex-start;
     align-items: center;
     gap: 10px;
     font-weight: 500;
@@ -441,8 +603,6 @@
 
   .form-actions button.secondary { height: 36px; padding: 0 14px; font-size: 14px; }
 
-  .heat-status { display: grid; gap: 8px; margin-top: 12px; }
-  .heat-status p { margin: 0; }
 
   @media (max-width: 480px) {
     .history-grid { grid-template-columns: 1fr; }
@@ -450,6 +610,7 @@
 
   .range-buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
   }
 
@@ -563,11 +724,13 @@
     font-size: 12px;
   }
 
+  .message:empty { display: none; }
   .message.ok { color: var(--ok); }
   .message.error { color: var(--err); }
 
   @media (max-width: 480px) {
     form { flex-direction: column; align-items: stretch; }
+    .conn #status { display: none; }
   }
 
   .card .badge.error { display: none; }
@@ -575,24 +738,6 @@
   .card .badge.retry,
   .sensor-error .card .badge.retry { display: none; }
   .sensor-retry:not(.sensor-error) .card .badge.retry { display: inline-flex; }
-
-  footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px 16px;
-    padding: 14px 16px;
-    border-top: 1px solid var(--border);
-    font-size: 12px;
-    color: var(--muted-foreground);
-  }
-
-  .footer-status {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
 
   .dot {
     position: relative;
@@ -621,7 +766,7 @@
   body.offline .card { opacity: 0.5; }
   body.offline .dot { background: var(--err); }
   body.offline .dot::after { animation: none; }
-  body.offline footer .badge { background: var(--err-bg); color: var(--err-fg); }
+  body.offline .conn { color: var(--err); }
 
   @media (prefers-reduced-motion: reduce) {
     .dot::after { animation: none; }
@@ -630,20 +775,31 @@
 </head>
 <body>
   <header>
-    <div class="brand">🍄 <span id="device-name">fungi</span></div>
-  </header>
-
-  <main>
-    <div class="grid">
-      <section class="card control">
-        <div class="card-header">
-          <span class="title">Dispositivos</span>
-          <span class="badge off" id="devices-count">1</span>
-        </div>
+    <div class="switcher">
+      <button type="button" class="brand" id="device-switch" aria-haspopup="true" aria-expanded="false" aria-controls="device-menu">
+        🍄 <span id="device-name">fungi</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="menu" id="device-menu" hidden>
+        <div class="menu-title">Controladores en la red</div>
         <div class="devices" id="devices"></div>
         <p class="help" id="devices-help">Otros controladores en la misma WiFi van a aparecer acá automáticamente.</p>
-      </section>
-      <section class="card">
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="conn" id="conn"><span class="dot"></span><span id="status">en línea</span></span>
+      <button type="button" class="icon-button" id="settings-toggle" aria-label="Configuración" title="Configuración">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="view-main">
+    <div class="section-head">
+      <h2>Ahora</h2>
+      <span class="help">Última lectura <span class="mono" id="checked">—</span></span>
+    </div>
+    <div class="grid">
+      <section class="card reading">
         <div class="card-header">
           <span class="label">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>
@@ -653,8 +809,13 @@
           <span class="badge error retry" title="La última lectura falló; se sigue usando la anterior hasta 2 minutos">REINTENTANDO</span>
         </div>
         <div><span class="value" id="temperature">—</span><span class="unit">°C</span></div>
+        <div class="reading-foot">
+          <span id="temp-target">—</span>
+          <span class="actuator" id="temp-actuator">—</span>
+          <div class="meter" id="heat-meter" hidden><span id="heat-meter-fill"></span></div>
+        </div>
       </section>
-      <section class="card">
+      <section class="card reading">
         <div class="card-header">
           <span class="label">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>
@@ -664,126 +825,189 @@
           <span class="badge error retry" title="La última lectura falló; se sigue usando la anterior hasta 2 minutos">REINTENTANDO</span>
         </div>
         <div><span class="value" id="humidity">—</span><span class="unit">%</span></div>
-      </section>
-      <section class="card control">
-        <div class="card-header">
-          <span class="title">Control de humedad</span>
-          <span class="badge off" id="hum-badge">APAGADO</span>
+        <div class="reading-foot">
+          <span id="hum-target">—</span>
+          <span class="actuator" id="hum-actuator">—</span>
         </div>
-        <p class="help">El humidificador se enciende por debajo del mínimo y se apaga al llegar al máximo.</p>
-        <label class="switch">
-          <input type="checkbox" id="hum-enabled">
-          <span class="track"></span>
-          Control activo
-        </label>
-        <form id="hum-form" novalidate>
-          <div class="field">
-            <label for="hum-min">Mínimo %</label>
-            <input id="hum-min" type="number" min="0" max="100" step="1" inputmode="numeric" required>
-          </div>
-          <div class="field">
-            <label for="hum-max">Máximo %</label>
-            <input id="hum-max" type="number" min="0" max="100" step="1" inputmode="numeric" required>
-          </div>
-          <button type="submit" id="hum-save">Guardar</button>
-        </form>
-        <p class="message" id="hum-message" role="status"></p>
       </section>
+      <section class="card strip">
+        <span class="label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>
+          Extractor
+        </span>
+        <span class="actuator" id="ext-now">—</span>
+      </section>
+    </div>
+
+    <div class="section-head">
+      <h2>Controles</h2>
+    </div>
+    <div class="grid">
       <section class="card control">
         <div class="card-header">
           <span class="title">Calefacción</span>
-          <span class="badge off" id="heat-badge">DESACTIVADO</span>
+          <div class="header-actions">
+            <span class="badge off" id="heat-badge">DESACTIVADO</span>
+            <label class="switch" title="Control activo">
+              <input type="checkbox" id="heat-enabled" aria-label="Calefacción activa">
+              <span class="track"></span>
+            </label>
+          </div>
         </div>
-        <p class="help">Mantiene la temperatura en el medio entre la mínima y la máxima. Primero aprende cómo responde la carpa (prende en la mínima y apaga en la máxima un par de veces) y después regula prendiendo el calefactor de a ratos cortos.</p>
-        <label class="switch">
-          <input type="checkbox" id="heat-enabled">
-          <span class="track"></span>
-          Control activo
-        </label>
-        <form id="heat-form" novalidate>
-          <div class="field">
-            <label for="heat-min">Mínima °C</label>
-            <input id="heat-min" type="number" min="0" max="50" step="0.5" inputmode="decimal" required>
+        <p class="status-line" id="heat-mode">—</p>
+        <p class="help" id="heat-model"></p>
+        <details class="adjust">
+          <summary>Ajustar</summary>
+          <div class="adjust-body">
+            <p class="help">Mantiene la temperatura en el medio entre la mínima y la máxima. Primero aprende cómo responde la carpa (prende en la mínima y apaga en la máxima un par de veces) y después regula prendiendo el calefactor de a ratos cortos.</p>
+            <form id="heat-form" novalidate>
+              <div class="field">
+                <label for="heat-min">Mínima °C</label>
+                <input id="heat-min" type="number" min="0" max="50" step="0.5" inputmode="decimal" required>
+              </div>
+              <div class="field">
+                <label for="heat-max">Máxima °C</label>
+                <input id="heat-max" type="number" min="0" max="50" step="0.5" inputmode="decimal" required>
+              </div>
+              <div class="field">
+                <label for="heat-watts">Potencia W</label>
+                <input id="heat-watts" type="number" min="1" max="5000" step="1" inputmode="numeric" required>
+              </div>
+              <button type="submit" id="heat-save">Guardar</button>
+            </form>
+            <div class="form-actions">
+              <button type="button" class="secondary" id="heat-relearn">Volver a aprender</button>
+            </div>
           </div>
-          <div class="field">
-            <label for="heat-max">Máxima °C</label>
-            <input id="heat-max" type="number" min="0" max="50" step="0.5" inputmode="decimal" required>
-          </div>
-          <button type="submit" id="heat-save">Guardar</button>
-        </form>
+        </details>
         <p class="message" id="heat-message" role="status"></p>
-        <div class="heat-status" id="heat-status" hidden>
-          <p id="heat-mode"></p>
-          <p class="help" id="heat-model"></p>
-          <div class="form-actions">
-            <button type="button" class="secondary" id="heat-relearn">Volver a aprender</button>
-          </div>
-        </div>
       </section>
+
       <section class="card control">
         <div class="card-header">
-          <span class="title">Calefacción · historial</span>
+          <span class="title">Humedad</span>
           <div class="header-actions">
-            <div class="range-buttons" role="group" aria-label="Período">
-              <button type="button" class="secondary" data-range="1h">1 h</button>
-              <button type="button" class="secondary" data-range="2h">2 h</button>
-              <button type="button" class="secondary" data-range="6h">6 h</button>
-              <button type="button" class="secondary" data-range="24h">24 h</button>
-              <button type="button" class="secondary" data-range="7d">7 d</button>
-            </div>
-            <button type="button" class="secondary" id="heat-chart-refresh" aria-label="Actualizar">↻</button>
+            <span class="badge off" id="hum-badge">DESACTIVADO</span>
+            <label class="switch" title="Control activo">
+              <input type="checkbox" id="hum-enabled" aria-label="Control de humedad activo">
+              <span class="track"></span>
+            </label>
           </div>
         </div>
-        <div class="legend">
-          <span class="legend-item"><span class="legend-swatch on"></span>Calefacción prendida</span>
-          <span class="legend-item"><span class="legend-swatch off"></span>Apagada</span>
-          <span class="legend-item">- - - mínima y máxima configuradas</span>
-        </div>
-        <div class="chart" id="heat-chart"><div class="chart-empty">Cargando…</div></div>
-        <div class="table-wrap" id="heat-cycles"></div>
-        <p class="help" id="heat-cycles-note"></p>
+        <p class="status-line" id="hum-mode">—</p>
+        <details class="adjust">
+          <summary>Ajustar</summary>
+          <div class="adjust-body">
+            <p class="help">El humidificador se prende por debajo del mínimo y se apaga al llegar al máximo.</p>
+            <form id="hum-form" novalidate>
+              <div class="field">
+                <label for="hum-min">Mínimo %</label>
+                <input id="hum-min" type="number" min="0" max="100" step="1" inputmode="numeric" required>
+              </div>
+              <div class="field">
+                <label for="hum-max">Máximo %</label>
+                <input id="hum-max" type="number" min="0" max="100" step="1" inputmode="numeric" required>
+              </div>
+              <button type="submit" id="hum-save">Guardar</button>
+            </form>
+          </div>
+        </details>
+        <p class="message" id="hum-message" role="status"></p>
       </section>
+
       <section class="card control">
         <div class="card-header">
           <span class="title">Extractor</span>
-          <span class="badge off" id="extractor">DESACTIVADO</span>
+          <div class="header-actions">
+            <span class="badge off" id="extractor">DESACTIVADO</span>
+            <label class="switch" title="Ciclo activo">
+              <input type="checkbox" id="extEnabled" aria-label="Extractor activo">
+              <span class="track"></span>
+            </label>
+          </div>
         </div>
-        <p class="help" id="ext-help">Alterna entre el tiempo apagado y el tiempo encendido. Al arrancar empieza encendido.</p>
-        <label class="switch">
-          <input type="checkbox" id="extEnabled">
-          <span class="track"></span>
-          Ciclo activo
-        </label>
-        <form id="ext-times" novalidate>
-          <div class="field">
-            <label for="extOff">Tiempo apagado</label>
-            <div class="time">
-              <input id="extOff" type="number" min="1" step="1" inputmode="numeric" required>
-              <select id="extOffUnit" aria-label="Unidad del tiempo apagado">
-                <option value="1">seg</option>
-                <option value="60">min</option>
-                <option value="3600">h</option>
-              </select>
-            </div>
+        <p class="status-line" id="ext-help">—</p>
+        <details class="adjust">
+          <summary>Ajustar</summary>
+          <div class="adjust-body">
+            <p class="help">Alterna entre el tiempo apagado y el tiempo prendido. Al activarlo o guardar empieza prendido.</p>
+            <form id="ext-times" novalidate>
+              <div class="field">
+                <label for="extOff">Tiempo apagado</label>
+                <div class="time">
+                  <input id="extOff" type="number" min="1" step="1" inputmode="numeric" required>
+                  <select id="extOffUnit" aria-label="Unidad del tiempo apagado">
+                    <option value="1">seg</option>
+                    <option value="60">min</option>
+                    <option value="3600">h</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="extOn">Tiempo prendido</label>
+                <div class="time">
+                  <input id="extOn" type="number" min="1" step="1" inputmode="numeric" required>
+                  <select id="extOnUnit" aria-label="Unidad del tiempo prendido">
+                    <option value="1">seg</option>
+                    <option value="60">min</option>
+                    <option value="3600">h</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" id="ext-save">Guardar</button>
+            </form>
           </div>
-          <div class="field">
-            <label for="extOn">Tiempo encendido</label>
-            <div class="time">
-              <input id="extOn" type="number" min="1" step="1" inputmode="numeric" required>
-              <select id="extOnUnit" aria-label="Unidad del tiempo encendido">
-                <option value="1">seg</option>
-                <option value="60">min</option>
-                <option value="3600">h</option>
-              </select>
-            </div>
-          </div>
-          <button type="submit" id="ext-save">Guardar</button>
-        </form>
+        </details>
         <p class="message" id="ext-message" role="status"></p>
       </section>
+    </div>
+
+    <div class="section-head">
+      <h2>Historial</h2>
+    </div>
+    <section class="card">
+      <div class="card-header">
+        <div class="tabs" role="tablist" aria-label="Qué graficar">
+          <button type="button" role="tab" data-kind="temp">Temperatura</button>
+          <button type="button" role="tab" data-kind="hum">Humedad</button>
+        </div>
+        <div class="header-actions">
+          <div class="range-buttons" role="group" aria-label="Período">
+            <button type="button" class="secondary" data-range="1h">1 h</button>
+            <button type="button" class="secondary" data-range="2h">2 h</button>
+            <button type="button" class="secondary" data-range="6h">6 h</button>
+            <button type="button" class="secondary" data-range="24h">24 h</button>
+            <button type="button" class="secondary" data-range="7d">7 d</button>
+          </div>
+          <button type="button" class="secondary" id="chart-refresh" aria-label="Actualizar">↻</button>
+        </div>
+      </div>
+      <div class="stats" id="chart-stats"></div>
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch on"></span><span id="legend-on">Calefacción prendida</span></span>
+        <span class="legend-item"><span class="legend-swatch off"></span><span id="legend-off">Apagada</span></span>
+        <span class="legend-item">- - - mínima y máxima configuradas</span>
+      </div>
+      <div class="chart" id="chart"><div class="chart-empty">Cargando…</div></div>
+      <details class="adjust" id="cycles-details">
+        <summary>Ver ciclos</summary>
+        <div class="adjust-body">
+          <div class="table-wrap" id="cycles"></div>
+          <p class="help" id="cycles-note"></p>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <main id="view-settings" hidden>
+    <div class="section-head">
+      <h2>Configuración</h2>
+      <button type="button" class="secondary" id="settings-back">← Volver al panel</button>
+    </div>
+    <div class="grid">
       <section class="card control">
         <div class="card-header">
-          <span class="title">Dispositivo</span>
+          <span class="title">Equipo</span>
         </div>
         <p class="help" id="device-info">—</p>
         <form id="device-form" novalidate>
@@ -798,14 +1022,15 @@
       <section class="card control">
         <div class="card-header">
           <span class="title">Historial (InfluxDB)</span>
-          <span class="badge off" id="hist-badge">DESACTIVADO</span>
+          <div class="header-actions">
+            <span class="badge off" id="hist-badge">DESACTIVADO</span>
+            <label class="switch" title="Guardar historial">
+              <input type="checkbox" id="hist-enabled" aria-label="Guardar historial">
+              <span class="track"></span>
+            </label>
+          </div>
         </div>
-        <p class="help">Temperatura y humedad cada tantos minutos (configurable), y el tiempo encendido del humidificador y la calefacción. La retención de 7 días se configura en el bucket.</p>
-        <label class="switch">
-          <input type="checkbox" id="hist-enabled">
-          <span class="track"></span>
-          Guardar historial
-        </label>
+        <p class="help">Temperatura y humedad cada tantos minutos (configurable), y el tiempo prendido del humidificador y la calefacción. La retención de 7 días se configura en el bucket.</p>
         <form id="hist-form" class="history-grid" novalidate>
           <div class="field">
             <label for="hist-url">URL</label>
@@ -851,27 +1076,18 @@
     </div>
   </main>
 
-  <footer>
-    <div class="footer-status">
-      <span class="dot"></span>
-      <span id="status">status OK</span>
-      <span class="badge" id="badge">ONLINE</span>
-    </div>
-    <div>Última lectura <span class="mono" id="checked">—</span></div>
-  </footer>
-
 <script>
   const $ = (id) => document.getElementById(id);
   const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(1));
 
   function renderOnline(online) {
     document.body.classList.toggle("offline", !online);
-    $("badge").textContent = online ? "ONLINE" : "OFFLINE";
-    $("status").textContent = online ? "status OK" : "sin conexión";
+    $("status").textContent = online ? "en línea" : "sin conexión";
+    $("conn").title = online ? "Conectado al controlador" : "Sin conexión con el controlador";
   }
 
   function renderDeviceBadge(id, enabled, on) {
-    $(id).textContent = !enabled ? "DESACTIVADO" : on ? "ENCENDIDO" : "APAGADO";
+    $(id).textContent = !enabled ? "DESACTIVADO" : on ? "PRENDIDO" : "APAGADO";
     $(id).classList.toggle("off", !enabled || !on);
   }
 
@@ -887,6 +1103,7 @@
   const MAX_SEC = 86400;
   let extRemaining = null;
   let extEnabledSaved = false;
+  let extOn = false;
 
   function formatRemaining(sec) {
     const h = Math.floor(sec / 3600);
@@ -898,17 +1115,24 @@
 
   function renderExtractor(on, remaining) {
     renderDeviceBadge("extractor", extEnabledSaved, on);
+    extOn = on;
     extRemaining = remaining;
-    renderCountdown(on);
+    renderCountdown();
   }
 
-  function renderCountdown(on = $("extractor").textContent === "ENCENDIDO") {
-    if (!extEnabledSaved || extRemaining === null) {
-      $("ext-help").textContent = "Alterna entre el tiempo apagado y el tiempo encendido. Al arrancar empieza encendido.";
-      return;
+  // Mismo texto en «Ahora» y en la tarjeta del extractor
+  function renderCountdown() {
+    for (const id of ["ext-help", "ext-now"]) {
+      const node = $(id);
+      if (!extEnabledSaved) {
+        node.textContent = id === "ext-now" ? "Desactivado" : "Desactivado: el extractor queda apagado.";
+      } else if (extRemaining === null) {
+        node.textContent = extOn ? "Prendido" : "Apagado";
+      } else {
+        node.replaceChildren((extOn ? "Prendido · se apaga en " : "Apagado · se prende en "),
+          el("span", "countdown", formatRemaining(extRemaining)));
+      }
     }
-    $("ext-help").innerHTML = (on ? "Se apaga en " : "Se enciende en ")
-      + '<span class="countdown">' + formatRemaining(extRemaining) + "</span>";
   }
 
   setInterval(() => {
@@ -987,7 +1211,7 @@
   });
 
   // Controles por rango (humedad y calefacción): interruptor + mínimo/máximo con histéresis en el ESP32
-  function rangeControl({ prefix, url, minParam, maxParam, lo, hi, invalidText }) {
+  function rangeControl({ prefix, url, minParam, maxParam, lo, hi, invalidText, extra = {}, onSaved }) {
     const ctl = { enabled: false };
     const minEl = $(prefix + "-min");
     const maxEl = $(prefix + "-max");
@@ -1005,6 +1229,7 @@
         toggle.checked = cfg.enabled;
         minEl.value = cfg[minParam];
         maxEl.value = cfg[maxParam];
+        for (const [param, spec] of Object.entries(extra)) $(spec.id).value = cfg[param];
       } catch {
         showMessage("No se pudo cargar la configuración.", "error", msg);
       }
@@ -1020,12 +1245,24 @@
         showMessage(invalidText, "error", msg);
         return false;
       }
+      const extraValues = {};
+      for (const [param, spec] of Object.entries(extra)) {
+        const node = $(spec.id);
+        const value = Number(node.value);
+        const ok = node.value !== "" && spec.valid(value);
+        node.setAttribute("aria-invalid", !ok);
+        if (!ok) {
+          showMessage(spec.invalidText, "error", msg);
+          return false;
+        }
+        extraValues[param] = value;
+      }
 
       $(prefix + "-save").disabled = true;
       try {
         const res = await fetch(url, {
           method: "POST",
-          body: new URLSearchParams({ enabled: toggle.checked ? 1 : 0, [minParam]: min, [maxParam]: max }),
+          body: new URLSearchParams({ enabled: toggle.checked ? 1 : 0, [minParam]: min, [maxParam]: max, ...extraValues }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Error al guardar.");
@@ -1033,7 +1270,7 @@
         ctl.enabled = data.enabled;
         ctl.min = data[minParam];
         ctl.max = data[maxParam];
-        if (prefix === "heat") loadHeatChart();
+        onSaved?.();
         showMessage("Guardado.", "ok", msg);
         update();
         return true;
@@ -1061,11 +1298,20 @@
   const humidity = rangeControl({
     prefix: "hum", url: "/config", minParam: "humMin", maxParam: "humMax", lo: 0, hi: 100,
     invalidText: "El mínimo debe ser menor que el máximo (0 a 100).",
+    onSaved: () => loadChart(),
   });
 
   const heating = rangeControl({
     prefix: "heat", url: "/heater", minParam: "tempMin", maxParam: "tempMax", lo: 0, hi: 50,
     invalidText: "La mínima debe ser menor que la máxima (0 a 50 °C).",
+    extra: {
+      watts: {
+        id: "heat-watts",
+        valid: (v) => Number.isInteger(v) && v >= 1 && v <= 5000,
+        invalidText: "La potencia del calefactor tiene que ser un número entero de 1 a 5000 W.",
+      },
+    },
+    onSaved: () => loadChart(),
   });
 
   // ---- Este dispositivo (nombre) ----
@@ -1190,33 +1436,54 @@
       row.append(indicators);
       list.append(row);
     }
-    $("devices-count").textContent = devices.length;
     $("devices-help").hidden = devices.length > 1;
   }
 
-  // Estado de la calefacción adaptativa: aprendiendo o regulando, y lo que aprendió de la carpa
+  // Estado de los controles en lenguaje simple, en «Ahora» y en cada tarjeta
   const dec = (n, d) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
   let heatStatusMode = null;
 
-  function renderHeatStatus(data) {
+  function renderControls(data) {
     const cfg = heating.cfg;
-    $("heat-status").hidden = !cfg || !heating.enabled;
-    if (!cfg || !heating.enabled) return;
     // Cambió de modo en el equipo: se vuelve a pedir lo aprendido
     if (data.heatMode && data.heatMode !== heatStatusMode) {
       if (heatStatusMode !== null) heating.load();
       heatStatusMode = data.heatMode;
     }
-    const target = dec((heating.min + heating.max) / 2, 1) + " °C";
-    $("heat-mode").textContent = !data.ok ? "Sin lecturas del sensor: calefacción apagada."
-      : data.heatMode === "pi"
-        ? "Regulando a " + target + (data.heatPower !== null && data.heatPower !== undefined ? " · potencia " + data.heatPower + " %" : "") + "."
-        : "Aprendiendo cómo responde la carpa: ciclo " + Math.min((data.heatLearnCycle ?? 0) + 1, cfg.learnCycles) + " de " + cfg.learnCycles + ".";
-    const m = cfg.model;
-    $("heat-model").textContent = !m ? "Todavía no aprendió nada de esta carpa."
-      : (data.heatMode === "pi" ? "Aprendido" : "Aprendido antes") + ": tarda " + dec(m.deadSec / 60, 1) + " min en notar el calefactor"
-        + " · sube " + dec(m.riseRate, 2) + " °C/min prendido · baja " + dec(m.lossRate, 2) + " °C/min apagado"
-        + " · prende una parte de cada " + dec(m.windowSec / 60, 1) + " min.";
+
+    // Calefacción
+    const regulating = heating.enabled && data.ok && data.heatMode === "pi" && data.heatPower != null;
+    const learning = heating.enabled && data.ok && data.heatMode !== "pi";
+    const learnText = cfg ? "ciclo " + Math.min((data.heatLearnCycle ?? 0) + 1, cfg.learnCycles) + " de " + cfg.learnCycles : "";
+    const heaterState = data.heater ? "prendida" : "apagada";
+    const target = heating.min != null ? dec((heating.min + heating.max) / 2, 1) + " °C" : "—";
+    $("heat-mode").textContent = !heating.enabled ? "Desactivado: la calefacción queda apagada."
+      : !data.ok ? "Sin lecturas del sensor: calefacción apagada."
+      : regulating ? "Regulando a " + target + " · potencia " + data.heatPower + " %"
+      : "Aprendiendo cómo responde la carpa (" + learnText + ") · " + heaterState;
+    const m = cfg?.model;
+    $("heat-model").textContent = !heating.enabled ? ""
+      : m ? (data.heatMode === "pi" ? "Aprendió" : "Aprendido antes") + ": tarda " + dec(m.deadSec / 60, 1) + " min en notar el calefactor"
+          + " · sube " + dec(m.riseRate, 2) + " °C/min prendido · baja " + dec(m.lossRate, 2) + " °C/min apagado"
+          + " · prende una parte de cada " + dec(m.windowSec / 60, 1) + " min."
+      : "Mientras aprende, prende en la mínima y apaga en la máxima.";
+
+    $("temp-target").textContent = heating.enabled
+      ? "Objetivo " + target + " (" + dec(heating.min, 1) + "–" + dec(heating.max, 1) + ")"
+      : "Calefacción desactivada";
+    $("temp-actuator").textContent = !heating.enabled || !data.ok ? ""
+      : regulating ? "Calefacción al " + data.heatPower + " %"
+      : "Calefacción " + heaterState + (learning ? " · aprendiendo" : "");
+    $("heat-meter").hidden = !regulating;
+    if (regulating) $("heat-meter-fill").style.width = Math.min(Math.max(data.heatPower, 0), 100) + "%";
+
+    // Humedad
+    const humState = data.humidifier ? "prendido" : "apagado";
+    $("hum-mode").textContent = !humidity.enabled ? "Desactivado: el humidificador queda apagado."
+      : !data.ok ? "Sin lecturas del sensor: humidificador apagado."
+      : "Humidificador " + humState + " · mantiene entre " + humidity.min + " y " + humidity.max + " %";
+    $("hum-target").textContent = humidity.enabled ? "Rango " + humidity.min + "–" + humidity.max + " %" : "Control desactivado";
+    $("hum-actuator").textContent = humidity.enabled && data.ok ? "Humidificador " + humState : "";
   }
 
   $("heat-relearn").addEventListener("click", async () => {
@@ -1244,7 +1511,7 @@
     $("checked").textContent = new Date().toLocaleTimeString("es-AR");
     renderDeviceBadge("hum-badge", humidity.enabled, data.humidifier);
     renderDeviceBadge("heat-badge", heating.enabled, data.heater);
-    renderHeatStatus(data);
+    renderControls(data);
     renderExtractor(data.extractor, data.extractorRemaining ?? null);
   }
 
@@ -1380,10 +1647,22 @@
   // ---- Gráficos (historial desde InfluxDB, vía el ESP32) ----
   const SVG_NS = "http://www.w3.org/2000/svg";
   const RANGE_MS = { "1h": 3600e3, "2h": 2 * 3600e3, "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 24 * 3600e3 };
-  let heatRange = "24h";
-  try { heatRange = localStorage.getItem("heatRange") || heatRange; } catch {}
-  if (!RANGE_MS[heatRange]) heatRange = "24h";
-  let heatData = null;  // { rows, windowSec, range, loadedAt }
+  // Qué se grafica: temperatura con la calefacción o humedad con el humidificador
+  const KINDS = {
+    temp: { valueField: "temperatura", onField: "calefaccion_seg", valueLabel: "Temperatura", unit: "°C", decimals: 1,
+            onLabel: "Calefacción", onWord: "prendida", offWord: "apagada", ctl: () => heating },
+    hum: { valueField: "humedad", onField: "humidificador_seg", valueLabel: "Humedad", unit: "%", decimals: 0,
+           onLabel: "Humidificador", onWord: "prendido", offWord: "apagado", ctl: () => humidity },
+  };
+  let chartRange = "24h";
+  let chartKind = "temp";
+  try {
+    chartRange = localStorage.getItem("heatRange") || chartRange;
+    chartKind = localStorage.getItem("chartKind") || chartKind;
+  } catch {}
+  if (!RANGE_MS[chartRange]) chartRange = "24h";
+  if (!KINDS[chartKind]) chartKind = "temp";
+  let chartData = null;  // { rows, windowSec, range, kind }
 
   function svgEl(tag, attrs, text) {
     const node = document.createElementNS(SVG_NS, tag);
@@ -1392,8 +1671,8 @@
     return node;
   }
 
-  // CSV de InfluxDB (con encabezado, sin anotaciones) → [{ t: Date, temp: número|null, on: segundos }]
-  function parseInfluxCsv(text) {
+  // CSV de InfluxDB (con encabezado, sin anotaciones) → [{ t: Date, value: número|null, on: segundos }]
+  function parseInfluxCsv(text, valueField, onField) {
     const byTime = new Map();
     let header = null;
     for (const line of text.split(/\r?\n/)) {
@@ -1403,9 +1682,9 @@
       const get = (name) => { const i = header.indexOf(name); return i >= 0 ? cols[i] : ""; };
       const time = get("_time");
       if (!time) continue;
-      const row = byTime.get(time) || { t: new Date(time), temp: null, on: 0 };
-      if (get("temperatura") !== "") row.temp = Number(get("temperatura"));
-      if (get("calefaccion_seg") !== "") row.on = Number(get("calefaccion_seg"));
+      const row = byTime.get(time) || { t: new Date(time), value: null, on: 0 };
+      if (get(valueField) !== "") row.value = Number(get(valueField));
+      if (get(onField) !== "") row.on = Number(get(onField));
       byTime.set(time, row);
     }
     return [...byTime.values()].sort((a, b) => a.t - b.t);
@@ -1432,9 +1711,10 @@
   }
 
   // Barras en el tiempo, pintadas según si el aparato estuvo prendido en esa ventana. Un solo eje Y.
-  function renderBarChart(container, { rows, windowSec, range, unit, refLines, onLabel }) {
+  function renderBarChart(container, { rows, windowSec, range, kind, refLines }) {
+    const { unit, valueLabel, onLabel, offWord, decimals } = kind;
     container.replaceChildren();
-    const withValue = rows.filter((r) => r.temp !== null);
+    const withValue = rows.filter((r) => r.value !== null);
     if (!withValue.length) {
       container.append(el("div", "chart-empty", "Sin datos en este período."));
       return;
@@ -1448,7 +1728,7 @@
 
     const end = Date.now();
     const start = end - RANGE_MS[range];
-    const values = withValue.map((r) => r.temp).concat(refLines.map((l) => l.value).filter((v) => v != null));
+    const values = withValue.map((r) => r.value).concat(refLines.map((l) => l.value).filter((v) => v != null));
     let lo = Math.min(...values) - 0.5;
     let hi = Math.max(...values) + 0.5;
     const step = niceStep(hi - lo);
@@ -1459,7 +1739,7 @@
     const y = (v) => m.top + (1 - (v - lo) / (hi - lo)) * plotH;
 
     const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
-      "aria-label": "Temperatura en el tiempo; las barras azules son ventanas con la calefacción prendida" });
+      "aria-label": valueLabel + " en el tiempo; las barras azules son ventanas con " + onLabel.toLowerCase() + " " + kind.onWord });
 
     // Grilla y eje Y
     for (let v = lo; v <= hi + 1e-9; v += step) {
@@ -1498,7 +1778,7 @@
     for (const r of withValue) {
       const bx = x(r.t.getTime()) + gap / 2;
       if (bx + barW < m.left || bx > m.left + plotW) continue;
-      const top = y(r.temp);
+      const top = y(r.value);
       const h = Math.max(baseY - top, 1);
       const rad = Math.min(2, barW / 2);
       svg.append(svgEl("path", {
@@ -1533,8 +1813,8 @@
       const onMin = r.on / 60;
       tip.replaceChildren(
         el("div", "", formatTime(r.t).slice(0, 5) + (range === "7d" ? " · " + pad2(r.t.getDate()) + "/" + pad2(r.t.getMonth() + 1) : "")),
-        (() => { const d = el("div", ""); d.append("Temperatura ", el("strong", "", fmtNum(r.temp) + " " + unit)); return d; })(),
-        el("div", "", onLabel + ": " + (r.on > 0 ? fmtNum(onMin, onMin < 10 ? 1 : 0) + " min de " + Math.round(windowSec / 60) : "apagada")),
+        (() => { const d = el("div", ""); d.append(valueLabel + " ", el("strong", "", fmtNum(r.value, decimals) + " " + unit)); return d; })(),
+        el("div", "", onLabel + ": " + (r.on > 0 ? fmtNum(onMin, onMin < 10 ? 1 : 0) + " min de " + Math.round(windowSec / 60) : offWord)),
       );
       tip.hidden = false;
       const cx = ((x(r.t.getTime()) + slotW / 2) / width) * rect.width;
@@ -1572,10 +1852,10 @@
     return cycles.map((c, k) => {
       const next = cycles[k + 1];
       const lastIdx = next ? next.startIdx - 1 : rows.length - 1;
-      const slice = rows.slice(c.startIdx, lastIdx + 1).filter((r) => r.temp !== null);
-      const startTemp = rows.slice(c.startIdx).find((r) => r.temp !== null)?.temp ?? null;
-      const endOnTemp = rows.slice(c.startIdx, c.endIdx + 1).filter((r) => r.temp !== null).pop()?.temp ?? null;
-      const peakRow = slice.reduce((best, r) => (!best || r.temp > best.temp ? r : best), null);
+      const slice = rows.slice(c.startIdx, lastIdx + 1).filter((r) => r.value !== null);
+      const startTemp = rows.slice(c.startIdx).find((r) => r.value !== null)?.value ?? null;
+      const endOnTemp = rows.slice(c.startIdx, c.endIdx + 1).filter((r) => r.value !== null).pop()?.value ?? null;
+      const peakRow = slice.reduce((best, r) => (!best || r.value > best.value ? r : best), null);
       const offAt = rows[c.endIdx].t.getTime() + windowSec * 1000;
       const stillOn = !next && c.endIdx === rows.length - 1;
       const lastTempRow = slice[slice.length - 1];
@@ -1584,25 +1864,27 @@
         start: rows[c.startIdx].t,
         onMin: c.onSec / 60,
         startTemp,
-        peak: peakRow?.temp ?? null,
+        peak: peakRow?.value ?? null,
         rate: startTemp !== null && endOnTemp !== null && c.onSec > 0 ? (endOnTemp - startTemp) / (c.onSec / 60) : null,
         stillOn,
         heldMs: next ? rows[next.startIdx].t - offAt : null,
         heldSoFarMs: !next && !stillOn ? Date.now() - offAt : null,
-        dropPerHour: coolHours >= 0.25 ? (peakRow.temp - lastTempRow.temp) / coolHours : null,
+        dropPerHour: coolHours >= 0.25 ? (peakRow.value - lastTempRow.value) / coolHours : null,
       };
     });
   }
 
-  function renderCycles(container, note, cycles, windowSec) {
+  function renderCycles(container, note, cycles, windowSec, kind) {
+    const { unit, decimals, onWord } = kind;
+    const onTitle = onWord[0].toUpperCase() + onWord.slice(1);
     container.replaceChildren();
     if (!cycles.length) {
-      note.textContent = "No hubo ciclos de calefacción en este período.";
+      note.textContent = "No hubo ciclos en este período.";
       return;
     }
     const table = el("table", "cycles");
     const head = el("tr");
-    for (const h of ["Inicio", "Prendida", "Sube", "°C/min prendida", "Se mantuvo", "Cae"]) head.append(el("th", "", h));
+    for (const h of ["Inicio", onTitle, "Sube", unit + "/min " + onWord, "Se mantuvo", "Cae"]) head.append(el("th", "", h));
     table.append(el("thead"));
     table.tHead.append(head);
     const body = el("tbody");
@@ -1610,17 +1892,17 @@
     const shown = cycles.slice(-20).reverse();
     for (const c of shown) {
       const tr = el("tr");
-      const day = heatRange === "7d" ? pad2(c.start.getDate()) + "/" + pad2(c.start.getMonth() + 1) + " " : "";
-      const held = c.stillOn ? "prendida ahora"
+      const day = chartRange === "7d" ? pad2(c.start.getDate()) + "/" + pad2(c.start.getMonth() + 1) + " " : "";
+      const held = c.stillOn ? onWord + " ahora"
         : c.heldMs !== null ? formatDuration(c.heldMs)
         : "en curso (" + formatDuration(c.heldSoFarMs) + ")";
       for (const v of [
         day + formatTime(c.start).slice(0, 5),
         formatDuration(c.onMin * 60000),
-        c.startTemp !== null && c.peak !== null ? fmtNum(c.startTemp) + " → " + fmtNum(c.peak) + " °C" : dash,
+        c.startTemp !== null && c.peak !== null ? fmtNum(c.startTemp, decimals) + " → " + fmtNum(c.peak, decimals) + " " + unit : dash,
         c.rate !== null ? fmtNum(c.rate, 2) : dash,
         held,
-        c.dropPerHour !== null ? fmtNum(c.dropPerHour) + " °C/h" : dash,
+        c.dropPerHour !== null ? fmtNum(c.dropPerHour) + " " + unit + "/h" : dash,
       ]) tr.append(el("td", "", v));
       body.append(tr);
     }
@@ -1635,7 +1917,7 @@
       "",
       rates.length ? fmtNum(avg(rates), 2) : dash,
       helds.length ? formatDuration(avg(helds)) : dash,
-      drops.length ? fmtNum(avg(drops)) + " °C/h" : dash,
+      drops.length ? fmtNum(avg(drops)) + " " + unit + "/h" : dash,
     ]) sum.append(el("td", "", v));
     body.append(sum);
     table.append(body);
@@ -1645,47 +1927,159 @@
       + " Para más detalle, bajá el intervalo en Historial.";
   }
 
-  function drawHeatChart() {
-    if (!heatData) return;
-    renderBarChart($("heat-chart"), {
-      rows: heatData.rows, windowSec: heatData.windowSec, range: heatData.range, unit: "°C", onLabel: "Calefacción",
-      refLines: [{ value: heating.max, label: "máx " + fmtNum(heating.max ?? 0, 0) }, { value: heating.min, label: "mín " + fmtNum(heating.min ?? 0, 0) }],
-    });
-    renderCycles($("heat-cycles"), $("heat-cycles-note"), computeCycles(heatData.rows, heatData.windowSec), heatData.windowSec);
+  // Resumen del período: tiempo en rango, promedio, tiempo prendido y consumo estimado
+  function renderStats(container, { rows, windowSec, kind }) {
+    container.replaceChildren();
+    const withValue = rows.filter((r) => r.value !== null);
+    if (!withValue.length) return;
+    const ctl = kind.ctl();
+    const stat = (label, value, sub) => {
+      const box = el("div", "stat");
+      box.append(el("span", "stat-label", label), el("span", "stat-value", value));
+      if (sub) box.append(el("span", "stat-sub", sub));
+      container.append(box);
+    };
+
+    if (ctl.min != null) {
+      const inRange = withValue.filter((r) => r.value >= ctl.min && r.value <= ctl.max).length;
+      stat("En rango", Math.round((inRange / withValue.length) * 100) + " %",
+        "entre " + fmtNum(ctl.min, kind.decimals) + " y " + fmtNum(ctl.max, kind.decimals) + " " + kind.unit);
+    }
+    const avg = withValue.reduce((a, r) => a + r.value, 0) / withValue.length;
+    const lo = Math.min(...withValue.map((r) => r.value));
+    const hi = Math.max(...withValue.map((r) => r.value));
+    stat("Promedio", fmtNum(avg, kind.decimals) + " " + kind.unit,
+      "de " + fmtNum(lo, kind.decimals) + " a " + fmtNum(hi, kind.decimals));
+
+    const onSec = rows.reduce((a, r) => a + r.on, 0);
+    const coveredSec = rows.length * windowSec;
+    stat(kind.onLabel + " " + kind.onWord, formatDuration(onSec * 1000),
+      Math.round((onSec / coveredSec) * 100) + " % del tiempo");
+
+    const watts = ctl.cfg?.watts;
+    if (watts) {
+      const kwh = (onSec / 3600) * (watts / 1000);
+      const perDay = coveredSec >= 3600 ? kwh / (coveredSec / 86400) : null;
+      stat("Consumo", fmtNum(kwh, kwh < 1 ? 2 : 1) + " kWh",
+        perDay !== null ? "≈ " + fmtNum(perDay, perDay < 1 ? 2 : 1) + " kWh por día" : "con " + watts + " W");
+    }
   }
 
-  async function loadHeatChart() {
-    const range = heatRange;
-    document.querySelectorAll("[data-range]").forEach((b) => b.classList.toggle("active", b.dataset.range === range));
-    if (!heatData || heatData.range !== range) {
-      $("heat-chart").replaceChildren(el("div", "chart-empty", "Cargando…"));
+  function drawChart() {
+    if (!chartData) return;
+    const kind = KINDS[chartData.kind];
+    const ctl = kind.ctl();
+    const label = (word, v) => word + " " + fmtNum(v ?? 0, Number.isInteger(v) ? 0 : 1);
+    renderStats($("chart-stats"), { ...chartData, kind });
+    renderBarChart($("chart"), {
+      rows: chartData.rows, windowSec: chartData.windowSec, range: chartData.range, kind,
+      refLines: [{ value: ctl.max, label: label("máx", ctl.max) }, { value: ctl.min, label: label("mín", ctl.min) }],
+    });
+    renderCycles($("cycles"), $("cycles-note"), computeCycles(chartData.rows, chartData.windowSec), chartData.windowSec, kind);
+  }
+
+  function renderChartControls() {
+    const kind = KINDS[chartKind];
+    document.querySelectorAll("[data-range]").forEach((b) => b.classList.toggle("active", b.dataset.range === chartRange));
+    document.querySelectorAll("[data-kind]").forEach((b) => b.setAttribute("aria-selected", b.dataset.kind === chartKind));
+    $("legend-on").textContent = kind.onLabel + " " + kind.onWord;
+    $("legend-off").textContent = kind.offWord[0].toUpperCase() + kind.offWord.slice(1);
+  }
+
+  async function loadChart() {
+    const range = chartRange;
+    const kindKey = chartKind;
+    const kind = KINDS[kindKey];
+    renderChartControls();
+    if (!chartData || chartData.range !== range || chartData.kind !== kindKey) {
+      $("chart").replaceChildren(el("div", "chart-empty", "Cargando…"));
+      $("chart-stats").replaceChildren();
     }
     try {
-      const res = await fetch("/history?range=" + range, { cache: "no-store" });
+      const res = await fetch("/history?range=" + range + "&kind=" + kindKey, { cache: "no-store" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "No se pudo cargar el historial.");
       }
       const windowSec = Number(res.headers.get("X-Window-Min") || 5) * 60;
-      const rows = parseInfluxCsv(await res.text());
-      if (range !== heatRange) return;  // El usuario cambió de rango mientras cargaba
-      heatData = { rows, windowSec, range };
-      drawHeatChart();
+      const rows = parseInfluxCsv(await res.text(), kind.valueField, kind.onField);
+      if (range !== chartRange || kindKey !== chartKind) return;  // El usuario cambió de vista mientras cargaba
+      chartData = { rows, windowSec, range, kind: kindKey };
+      drawChart();
     } catch (err) {
-      heatData = null;
-      $("heat-chart").replaceChildren(el("div", "chart-empty", errorText(err)));
-      $("heat-cycles").replaceChildren();
-      $("heat-cycles-note").textContent = "";
+      if (range !== chartRange || kindKey !== chartKind) return;
+      chartData = null;
+      $("chart").replaceChildren(el("div", "chart-empty", errorText(err)));
+      $("chart-stats").replaceChildren();
+      $("cycles").replaceChildren();
+      $("cycles-note").textContent = "";
     }
   }
 
   document.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => {
-    heatRange = b.dataset.range;
-    try { localStorage.setItem("heatRange", heatRange); } catch {}
-    loadHeatChart();
+    chartRange = b.dataset.range;
+    try { localStorage.setItem("heatRange", chartRange); } catch {}
+    loadChart();
   }));
-  $("heat-chart-refresh").addEventListener("click", loadHeatChart);
-  new ResizeObserver(() => drawHeatChart()).observe($("heat-chart"));
+  document.querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => {
+    chartKind = b.dataset.kind;
+    try { localStorage.setItem("chartKind", chartKind); } catch {}
+    loadChart();
+  }));
+  $("chart-refresh").addEventListener("click", loadChart);
+  new ResizeObserver(() => drawChart()).observe($("chart"));
+
+  // ---- Selector de controladores (encabezado) ----
+  function setMenuOpen(open) {
+    $("device-menu").hidden = !open;
+    $("device-switch").setAttribute("aria-expanded", open);
+    if (open) loadDevices();
+  }
+
+  $("device-switch").addEventListener("click", (e) => {
+    e.stopPropagation();
+    setMenuOpen($("device-menu").hidden);
+  });
+  document.addEventListener("click", (e) => {
+    if (!$("device-menu").hidden && !$("device-menu").contains(e.target)) setMenuOpen(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("device-menu").hidden) {
+      setMenuOpen(false);
+      $("device-switch").focus();
+    }
+  });
+
+  // ---- Configuración (⚙): vista aparte, con #config en la dirección para que ande el botón Atrás ----
+  function renderView() {
+    const settings = location.hash === "#config";
+    $("view-main").hidden = settings;
+    $("view-settings").hidden = !settings;
+    $("settings-toggle").setAttribute("aria-pressed", settings);
+    if (settings) {
+      const box = $("log");
+      box.scrollTop = box.scrollHeight;
+    }
+    window.scrollTo(0, 0);
+  }
+
+  // Si se entró a la configuración desde el panel, volver es ir atrás; si se abrió directo, se reemplaza
+  let settingsFromPanel = false;
+  function closeSettings() {
+    if (settingsFromPanel) window.history.back();
+    else window.history.replaceState(null, "", location.pathname + location.search);
+    settingsFromPanel = false;
+    renderView();
+  }
+
+  $("settings-toggle").addEventListener("click", () => {
+    if (location.hash === "#config") return closeSettings();
+    settingsFromPanel = true;
+    location.hash = "#config";
+  });
+  $("settings-back").addEventListener("click", closeSettings);
+  window.addEventListener("hashchange", renderView);
+  renderView();
 
   // ---- Registro ----
   const LOG_MAX = 300;
@@ -1759,12 +2153,12 @@
 
   Promise.all([loadDevice(), humidity.load(), heating.load(), loadExtractor()]).then(() => {
     update().then(loadDevices);
-    loadHeatChart();
+    loadChart();
   });
   loadLogs().then(() => { $("log").scrollTop = $("log").scrollHeight; });
   loadHistory(true);
   setInterval(() => loadHistory(false), 5000);
-  setInterval(loadHeatChart, 5 * 60 * 1000);
+  setInterval(loadChart, 5 * 60 * 1000);
   setInterval(() => update().then(updatePeers), 5000);
   setInterval(loadLogs, 5000);
   setInterval(loadDevices, 30000);
