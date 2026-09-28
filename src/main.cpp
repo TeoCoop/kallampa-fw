@@ -24,8 +24,9 @@ static const int DHT_PIN = 4;
 static const int MOSFET_PIN = 26;  // TRIG/PWM del módulo MOSFET (humidificador)
 static const int EXTRACTOR_PIN = 27;  // IN del módulo relé del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
-static const int FLOAT_PIN = 13;      // Flotante del tanque a GND: cierra el circuito cuando está vacío
+static const int FLOAT_PIN = 13;      // Flotante del tanque a GND
 static const bool RELAY_ACTIVE_HIGH = false;  // Estos módulos se activan con señal baja (LOW = relé cerrado)
+static const int FLOAT_EMPTY_LEVEL = HIGH;    // Este flotante abre el circuito cuando el tanque está vacío
 static const unsigned long EXTRACTOR_MAX_SEC = 86400;  // 24 h
 static const unsigned long DHT_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas
 static const unsigned long FLOAT_DEBOUNCE_MS = 3000;  // El flotante tiene que quedarse quieto 3 s (el agua se mueve)
@@ -841,7 +842,7 @@ void applyWaterCuts(bool extWasCut) {
 }
 
 void updateFloat() {
-  bool raw = digitalRead(FLOAT_PIN) == LOW;  // Circuito cerrado = vacío
+  bool raw = digitalRead(FLOAT_PIN) == FLOAT_EMPTY_LEVEL;
   if (raw != floatRaw) {
     floatRaw = raw;
     floatChangedAt = millis();
@@ -1244,7 +1245,7 @@ void setup() {
   pinMode(RESET_PIN, INPUT_PULLUP);
   pinMode(FLOAT_PIN, INPUT_PULLUP);
   delay(5);  // Que se asiente el pull-up antes de leer
-  floatRaw = waterEmpty = digitalRead(FLOAT_PIN) == LOW;
+  floatRaw = waterEmpty = digitalRead(FLOAT_PIN) == FLOAT_EMPTY_LEVEL;
   floatChangedAt = millis();
 
   prefs.begin("config", false);
