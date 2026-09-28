@@ -355,6 +355,12 @@
 
   .badge.error { background: var(--err-bg); color: var(--err-fg); }
   .badge.off { background: var(--muted); color: var(--muted-foreground); }
+  .badge.alert { background: var(--err-bg); color: var(--err-fg); }
+
+  .options { display: flex; flex-direction: column; gap: 10px; }
+  .option { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .card.strip[hidden] { display: none; }
+  .actuator.alert { color: var(--err); }
 
   .control {
     grid-column: 1 / -1;
@@ -551,6 +557,7 @@
   }
 
   .indicator.on { background: var(--ok-bg); color: var(--ok-fg); }
+  .indicator.alert { background: var(--err-bg); color: var(--err-fg); }
 
   @media (max-width: 480px) {
     .device-row { grid-template-columns: auto 1fr auto; row-gap: 6px; }
@@ -837,6 +844,13 @@
         </span>
         <span class="actuator" id="ext-now">—</span>
       </section>
+      <section class="card strip" id="water-strip" hidden>
+        <span class="label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>
+          Tanque de agua
+        </span>
+        <span class="actuator" id="water-now">—</span>
+      </section>
     </div>
 
     <div class="section-head">
@@ -959,6 +973,43 @@
           </div>
         </details>
         <p class="message" id="ext-message" role="status"></p>
+      </section>
+
+      <section class="card control">
+        <div class="card-header">
+          <span class="title">Tanque de agua</span>
+          <div class="header-actions">
+            <span class="badge off" id="float-badge">DESACTIVADO</span>
+            <label class="switch" title="Flotante activo">
+              <input type="checkbox" id="float-enabled" aria-label="Flotante activo">
+              <span class="track"></span>
+            </label>
+          </div>
+        </div>
+        <p class="status-line" id="float-status">—</p>
+        <details class="adjust">
+          <summary>Ajustar</summary>
+          <div class="adjust-body">
+            <p class="help">Cuando el flotante indica que el tanque está vacío, apaga lo que elijas hasta que se vuelva a llenar.</p>
+            <div class="options">
+              <label class="option">
+                <span>Apagar el humidificador</span>
+                <span class="switch">
+                  <input type="checkbox" id="float-cut-hum" aria-label="Sin agua, apagar el humidificador">
+                  <span class="track"></span>
+                </span>
+              </label>
+              <label class="option">
+                <span>Apagar el extractor</span>
+                <span class="switch">
+                  <input type="checkbox" id="float-cut-ext" aria-label="Sin agua, apagar el extractor">
+                  <span class="track"></span>
+                </span>
+              </label>
+            </div>
+          </div>
+        </details>
+        <p class="message" id="float-message" role="status"></p>
       </section>
     </div>
 
@@ -1113,9 +1164,13 @@
     return (h ? h + ":" + pad(m) : m) + ":" + pad(s);
   }
 
-  function renderExtractor(on, remaining) {
+  let extPaused = false;
+
+  function renderExtractor(on, remaining, paused) {
     renderDeviceBadge("extractor", extEnabledSaved, on);
+    if (extEnabledSaved && paused) $("extractor").textContent = "EN PAUSA";
     extOn = on;
+    extPaused = paused;
     extRemaining = remaining;
     renderCountdown();
   }
@@ -1126,6 +1181,8 @@
       const node = $(id);
       if (!extEnabledSaved) {
         node.textContent = id === "ext-now" ? "Desactivado" : "Desactivado: el extractor queda apagado.";
+      } else if (extPaused) {
+        node.textContent = id === "ext-now" ? "En pausa · sin agua" : "En pausa por falta de agua: vuelve a arrancar cuando se llene el tanque.";
       } else if (extRemaining === null) {
         node.textContent = extOn ? "Prendido" : "Apagado";
       } else {
@@ -1209,6 +1266,62 @@
   $("extEnabled").addEventListener("change", async () => {
     if (!(await saveExtractor())) $("extEnabled").checked = extEnabledSaved;
   });
+
+  // ---- Flotante del tanque de agua ----
+  const tank = { enabled: false, cutHum: true, cutExt: false, water: null };
+  const floatInputs = { enabled: "float-enabled", cutHum: "float-cut-hum", cutExt: "float-cut-ext" };
+
+  function renderFloatForm() {
+    for (const [key, id] of Object.entries(floatInputs)) $(id).checked = tank[key];
+  }
+
+  function renderWater(data) {
+    const water = data.water ?? null;
+    tank.water = water;
+    const empty = water === "empty";
+    $("float-badge").textContent = !tank.enabled ? "DESACTIVADO" : empty ? "VACÍO" : "CON AGUA";
+    $("float-badge").className = "badge" + (!tank.enabled ? " off" : empty ? " alert" : "");
+
+    const cuts = [tank.cutHum && "humidificador", tank.cutExt && "extractor"].filter(Boolean);
+    const cutText = cuts.length ? cuts.join(" y ") : "nada";
+    $("float-status").textContent = !tank.enabled ? "Desactivado: no se tiene en cuenta el nivel de agua."
+      : empty ? (cuts.length ? "Vacío: " + cutText + " apagado" + (cuts.length > 1 ? "s" : "") + " hasta que se llene." : "Vacío. No se apaga nada (elegilo en Ajustar).")
+      : "Con agua. Si se vacía, se apaga: " + cutText + ".";
+
+    $("water-strip").hidden = !tank.enabled;
+    $("water-now").textContent = empty ? "Vacío" : "Con agua";
+    $("water-now").classList.toggle("alert", empty);
+  }
+
+  async function loadFloat() {
+    try {
+      const res = await fetch("/float", { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      Object.assign(tank, await res.json());
+      renderFloatForm();
+    } catch {
+      showMessage("No se pudo cargar la configuración del flotante.", "error", "float-message");
+    }
+  }
+
+  // Cada interruptor guarda al instante; si falla, vuelven a su posición anterior
+  async function saveFloat() {
+    const body = {};
+    for (const [key, id] of Object.entries(floatInputs)) body[key] = $(id).checked ? 1 : 0;
+    try {
+      const res = await fetch("/float", { method: "POST", body: new URLSearchParams(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al guardar.");
+      Object.assign(tank, data);
+      showMessage("Guardado.", "ok", "float-message");
+      update();
+    } catch (err) {
+      renderFloatForm();
+      showMessage(errorText(err), "error", "float-message");
+    }
+  }
+
+  for (const id of Object.values(floatInputs)) $(id).addEventListener("change", saveFloat);
 
   // Controles por rango (humedad y calefacción): interruptor + mínimo/máximo con histéresis en el ESP32
   function rangeControl({ prefix, url, minParam, maxParam, lo, hi, invalidText, extra = {}, onSaved }) {
@@ -1433,6 +1546,11 @@
         ind.title = title + (data?.[key] ? " encendido" : " apagado");
         indicators.append(ind);
       }
+      if (data?.water === "empty") {
+        const ind = el("span", "indicator alert", "AGUA");
+        ind.title = "Tanque de agua vacío";
+        indicators.append(ind);
+      }
       row.append(indicators);
       list.append(row);
     }
@@ -1478,9 +1596,11 @@
     if (regulating) $("heat-meter-fill").style.width = Math.min(Math.max(data.heatPower, 0), 100) + "%";
 
     // Humedad
-    const humState = data.humidifier ? "prendido" : "apagado";
+    const humNoWater = data.water === "empty" && tank.cutHum;
+    const humState = humNoWater ? "apagado por falta de agua" : data.humidifier ? "prendido" : "apagado";
     $("hum-mode").textContent = !humidity.enabled ? "Desactivado: el humidificador queda apagado."
       : !data.ok ? "Sin lecturas del sensor: humidificador apagado."
+      : humNoWater ? "Sin agua en el tanque: humidificador apagado hasta que se llene."
       : "Humidificador " + humState + " · mantiene entre " + humidity.min + " y " + humidity.max + " %";
     $("hum-target").textContent = humidity.enabled ? "Rango " + humidity.min + "–" + humidity.max + " %" : "Control desactivado";
     $("hum-actuator").textContent = humidity.enabled && data.ok ? "Humidificador " + humState : "";
@@ -1512,7 +1632,8 @@
     renderDeviceBadge("hum-badge", humidity.enabled, data.humidifier);
     renderDeviceBadge("heat-badge", heating.enabled, data.heater);
     renderControls(data);
-    renderExtractor(data.extractor, data.extractorRemaining ?? null);
+    renderExtractor(data.extractor, data.extractorRemaining ?? null, !!data.extractorPaused);
+    renderWater(data);
   }
 
   async function update() {
@@ -2151,7 +2272,7 @@
     }
   });
 
-  Promise.all([loadDevice(), humidity.load(), heating.load(), loadExtractor()]).then(() => {
+  Promise.all([loadDevice(), humidity.load(), heating.load(), loadExtractor(), loadFloat()]).then(() => {
     update().then(loadDevices);
     loadChart();
   });

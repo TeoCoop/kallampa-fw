@@ -21,9 +21,10 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | Relé calefacción | DC− (GND) | GND | |
 | Relé calefacción | IN | GPIO25 | Señal del generador de calor. |
 | Relé calefacción | COM + NO | Cable de fase del generador de calor | Igual que el extractor. **220V: hacerlo sin tensión y bien aislado.** Revisar que el consumo del calefactor no supere los 10A del relé. |
+| Flotante del tanque | Cable 1 / Cable 2 | GPIO33 / GND | Da lo mismo cuál va a cada lado. Tiene que **cerrar el circuito cuando el tanque está vacío**. Usa el pull-up interno, no lleva resistencia. |
 | Botón BOOT | — | GPIO0 | Ya viene en la placa. Mantenerlo apretado al encender borra las credenciales WiFi. |
 
-Los pines se definen en `src/main.cpp` (`DHT_PIN`, `MOSFET_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `RESET_PIN`).
+Los pines se definen en `src/main.cpp` (`DHT_PIN`, `MOSFET_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
 
 Se usa el contacto **NO** (normalmente abierto) de los relés para que, si el ESP32 está apagado, el extractor y la calefacción queden apagados. Los módulos usados se activan con señal baja (`RELAY_ACTIVE_HIGH = false`, vale para los dos relés). Si se cambian por unos que funcionen al revés (el aparato prende cuando el panel dice apagado), cambiar `RELAY_ACTIVE_HIGH` a `true` en `src/main.cpp` y volver a subir el firmware.
 
@@ -63,6 +64,16 @@ Desde la página se configura un ciclo que alterna **tiempo apagado** y **tiempo
 - La configuración se guarda en el ESP32 y sobrevive cortes de luz. Por defecto: desactivado, 15 min apagado y 30 s encendido.
 - La posición dentro del ciclo no se guarda: al volver la luz, el ciclo arranca de nuevo desde la fase encendida.
 - Mientras el ESP32 se conecta al WiFi al arrancar, el extractor queda apagado; el ciclo empieza cuando ya está conectado.
+
+## Tanque de agua (flotante)
+
+Un flotante en el tanque del humidificador avisa cuando se queda sin agua. En la tarjeta **Tanque de agua** del panel:
+
+- El interruptor activa o desactiva el flotante. Desactivado (por defecto), el nivel de agua no se tiene en cuenta.
+- En **Ajustar** se elige qué se apaga cuando el tanque está vacío: el **humidificador** (por defecto), el **extractor** o ambos.
+- Sin agua, el humidificador queda apagado aunque la humedad esté baja, y el ciclo del extractor queda en pausa. Cuando se vuelve a llenar, el humidificador retoma el control y el extractor reinicia el ciclo desde la fase encendida.
+- El estado cambia recién cuando el flotante se queda quieto 3 s, para que el movimiento del agua no lo haga saltar. En el Registro aparece "Tanque de agua VACÍO" / "Tanque de agua con agua".
+- Si el cable del flotante se corta, el equipo lo toma como "con agua".
 
 ## Primer uso
 
@@ -195,10 +206,12 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 | `GET /history?range=1h\|2h\|6h\|24h\|7d` | CSV de InfluxDB con `_time`, `temperatura` (promedio) y `calefaccion_seg` (suma) por ventana; el header `X-Window-Min` indica el tamaño de la ventana. 409 si el historial no está configurado, 502 si InfluxDB responde error |
 | `POST /history-test` | Toma una muestra y la envía ya; responde el estado o `{"error":"…"}` con el motivo |
 | `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
-| `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"retrying":false,"humidifier":false,"heater":false,"extractor":true,"extractorRemaining":12}` (`ok`: hay una lectura válida de hace menos de 2 min; `retrying`: la última lectura falló y se usa la anterior; `extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado). Permite lecturas desde otros equipos (CORS) |
+| `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"retrying":false,"humidifier":false,"heater":false,"extractor":true,"extractorPaused":false,"extractorRemaining":12,"water":"ok"}` (`ok`: hay una lectura válida de hace menos de 2 min; `retrying`: la última lectura falló y se usa la anterior; `extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado o en pausa; `extractorPaused`: ciclo en pausa por falta de agua; `water`: `"ok"`, `"empty"` o `null` si el flotante está desactivado). Permite lecturas desde otros equipos (CORS) |
 | `GET /config` | Control de humedad: `{"enabled":true,"humMin":85,"humMax":95}` |
 | `POST /config` | Parámetros de formulario `enabled` (`1`/`0`, opcional), `humMin` y `humMax`; responde la config guardada o 400 si no es válida |
 | `GET /heater` | `{"enabled":false,"tempMin":20.0,"tempMax":24.0}` |
 | `POST /heater` | Parámetros de formulario `enabled` (`1`/`0`), `tempMin` y `tempMax` (0 a 50); responde la config guardada o 400 si no es válida |
 | `GET /extractor` | `{"enabled":true,"offSec":900,"onSec":30}` |
 | `POST /extractor` | Parámetros de formulario `enabled` (`1`/`0`), `offSec` y `onSec` (1 a 86400); responde la config guardada o 400 si no es válida |
+| `GET /float` | Flotante: `{"enabled":true,"cutHum":true,"cutExt":false,"water":"ok"}` |
+| `POST /float` | Parámetros de formulario `enabled`, `cutHum` y `cutExt` (`1`/`0`); responde la config guardada |

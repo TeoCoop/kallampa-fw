@@ -24,9 +24,11 @@ static const int DHT_PIN = 4;
 static const int MOSFET_PIN = 26;  // TRIG/PWM del módulo MOSFET (humidificador)
 static const int EXTRACTOR_PIN = 27;  // IN del módulo relé del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
+static const int FLOAT_PIN = 33;      // Flotante del tanque a GND: cierra el circuito cuando está vacío
 static const bool RELAY_ACTIVE_HIGH = false;  // Estos módulos se activan con señal baja (LOW = relé cerrado)
 static const unsigned long EXTRACTOR_MAX_SEC = 86400;  // 24 h
 static const unsigned long DHT_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas
+static const unsigned long FLOAT_DEBOUNCE_MS = 3000;  // El flotante tiene que quedarse quieto 3 s (el agua se mueve)
 static const unsigned long SENSOR_GRACE_MS = 2UL * 60 * 1000;  // Si falla, se sigue con la última lectura hasta 2 min
 static const unsigned long DISCOVERY_INTERVAL_MS = 30000;
 static const uint32_t DISCOVERY_TIMEOUT_MS = 3000;
@@ -122,6 +124,14 @@ unsigned long extOnSec = 30;
 bool extractorOn = false;
 unsigned long phaseStartedAt = 0;
 
+// Flotante del tanque de agua
+bool floatEnabled = false;
+bool floatCutHum = true;   // Sin agua se apaga el humidificador
+bool floatCutExt = false;  // Sin agua se pausa el extractor
+bool waterEmpty = false;   // Estado ya filtrado por el antirrebote
+bool floatRaw = false;     // Última lectura cruda (true = vacío)
+unsigned long floatChangedAt = 0;
+
 // Historial en InfluxDB
 bool histEnabled = false;
 uint16_t historyIntervalMin = 5;  // Cada cuántos minutos se toma una muestra
@@ -206,9 +216,17 @@ void setHumidifier(bool on) {
   logMsg(on ? "Humidificador ENCENDIDO" : "Humidificador APAGADO");
 }
 
+bool humCutByWater() {
+  return floatEnabled && waterEmpty && floatCutHum;
+}
+
+bool extCutByWater() {
+  return floatEnabled && waterEmpty && floatCutExt;
+}
+
 // Histéresis: enciende por debajo del mínimo, apaga al llegar al máximo
 void updateHumidifier() {
-  if (!humEnabled || !lastReadOk) {
+  if (!humEnabled || !lastReadOk || humCutByWater()) {
     setHumidifier(false);
   } else if (lastHumidity < humMin) {
     setHumidifier(true);
@@ -642,8 +660,12 @@ void handleSensors() {
   json += String(learnCount);
   json += ",\"extractor\":";
   json += extractorOn ? "true" : "false";
+  json += ",\"extractorPaused\":";  // Pausado por falta de agua
+  json += extEnabled && extCutByWater() ? "true" : "false";
+  json += ",\"water\":";
+  json += !floatEnabled ? "null" : waterEmpty ? "\"empty\"" : "\"ok\"";
   json += ",\"extractorRemaining\":";
-  if (extEnabled) {
+  if (extEnabled && !extCutByWater()) {
     unsigned long elapsed = millis() - phaseStartedAt;
     unsigned long phase = extractorPhaseMs();
     json += String(elapsed >= phase ? 0 : (phase - elapsed + 999) / 1000);
@@ -686,7 +708,7 @@ void handlePostConfig() {
   prefs.putInt("humMax", humMax);
   logMsg("Humedad: activo=%d humMin=%d humMax=%d", humEnabled, humMin, humMax);
   // Con la config nueva se decide desde cero: solo queda encendido si está por debajo del mínimo
-  setHumidifier(humEnabled && lastReadOk && lastHumidity < humMin);
+  setHumidifier(humEnabled && lastReadOk && !humCutByWater() && lastHumidity < humMin);
   server.send(200, "application/json", configJson());
 }
 
@@ -760,9 +782,9 @@ void setExtractor(bool on) {
   logMsg(on ? "Extractor ENCENDIDO" : "Extractor APAGADO");
 }
 
-// El ciclo arranca siempre con la fase encendida
+// El ciclo arranca siempre con la fase encendida (salvo que esté en pausa por falta de agua)
 void restartExtractorCycle() {
-  setExtractor(extEnabled);
+  setExtractor(extEnabled && !extCutByWater());
 }
 
 unsigned long extractorPhaseMs() {
@@ -770,7 +792,7 @@ unsigned long extractorPhaseMs() {
 }
 
 void updateExtractor() {
-  if (!extEnabled) return;
+  if (!extEnabled || extCutByWater()) return;
   if (millis() - phaseStartedAt >= extractorPhaseMs()) {
     setExtractor(!extractorOn);
   }
@@ -806,6 +828,60 @@ void handlePostExtractor() {
   logMsg("Extractor: activo=%d apagado=%lus encendido=%lus", extEnabled, extOffSec, extOnSec);
   restartExtractorCycle();
   server.send(200, "application/json", extractorJson());
+}
+
+// ---- Flotante del tanque de agua ----
+
+// Vuelve a decidir humidificador y extractor según el agua
+void applyWaterCuts(bool extWasCut) {
+  updateHumidifier();
+  bool extCut = extCutByWater();
+  if (extCut && !extWasCut && extractorOn) setExtractor(false);
+  else if (!extCut && extWasCut && extEnabled) restartExtractorCycle();
+}
+
+void updateFloat() {
+  bool raw = digitalRead(FLOAT_PIN) == LOW;  // Circuito cerrado = vacío
+  if (raw != floatRaw) {
+    floatRaw = raw;
+    floatChangedAt = millis();
+  }
+  if (raw == waterEmpty || millis() - floatChangedAt < FLOAT_DEBOUNCE_MS) return;
+  bool extWasCut = extCutByWater();
+  waterEmpty = raw;
+  if (floatEnabled) {
+    logMsg(waterEmpty ? "Tanque de agua VACÍO" : "Tanque de agua con agua");
+    applyWaterCuts(extWasCut);
+  }
+}
+
+String floatJson() {
+  return "{\"enabled\":" + String(floatEnabled ? "true" : "false") +
+         ",\"cutHum\":" + String(floatCutHum ? "true" : "false") +
+         ",\"cutExt\":" + String(floatCutExt ? "true" : "false") +
+         ",\"water\":" + String(!floatEnabled ? "null" : waterEmpty ? "\"empty\"" : "\"ok\"") + "}";
+}
+
+void handleGetFloat() {
+  server.send(200, "application/json", floatJson());
+}
+
+void handlePostFloat() {
+  if (!server.hasArg("enabled") || !server.hasArg("cutHum") || !server.hasArg("cutExt")) {
+    server.send(400, "application/json", "{\"error\":\"Faltan enabled, cutHum y cutExt\"}");
+    return;
+  }
+  bool extWasCut = extCutByWater();
+  floatEnabled = server.arg("enabled") == "1";
+  floatCutHum = server.arg("cutHum") == "1";
+  floatCutExt = server.arg("cutExt") == "1";
+  prefs.putBool("floatEn", floatEnabled);
+  prefs.putBool("floatHum", floatCutHum);
+  prefs.putBool("floatExt", floatCutExt);
+  logMsg("Flotante: activo=%d apaga humidificador=%d apaga extractor=%d (tanque %s)",
+         floatEnabled, floatCutHum, floatCutExt, waterEmpty ? "vacío" : "con agua");
+  applyWaterCuts(extWasCut);
+  server.send(200, "application/json", floatJson());
 }
 
 // ---- Historial en InfluxDB ----
@@ -1166,6 +1242,10 @@ void setup() {
 
   Serial.begin(115200);
   pinMode(RESET_PIN, INPUT_PULLUP);
+  pinMode(FLOAT_PIN, INPUT_PULLUP);
+  delay(5);  // Que se asiente el pull-up antes de leer
+  floatRaw = waterEmpty = digitalRead(FLOAT_PIN) == LOW;
+  floatChangedAt = millis();
 
   prefs.begin("config", false);
 
@@ -1201,6 +1281,10 @@ void setup() {
   extEnabled = prefs.getBool("extEn", extEnabled);
   extOffSec = prefs.getULong("extOff", extOffSec);
   extOnSec = prefs.getULong("extOn", extOnSec);
+  floatEnabled = prefs.getBool("floatEn", floatEnabled);
+  floatCutHum = prefs.getBool("floatHum", floatCutHum);
+  floatCutExt = prefs.getBool("floatExt", floatCutExt);
+  if (floatEnabled && waterEmpty) logMsg("Tanque de agua VACÍO");
   histEnabled = prefs.getBool("histEn", histEnabled);
   influxUrl = prefs.getString("influxUrl", "");
   influxOrg = prefs.getString("influxOrg", "");
@@ -1254,6 +1338,8 @@ void setup() {
   server.on("/heater-learn", HTTP_POST, handleHeaterLearn);
   server.on("/extractor", HTTP_GET, handleGetExtractor);
   server.on("/extractor", HTTP_POST, handlePostExtractor);
+  server.on("/float", HTTP_GET, handleGetFloat);
+  server.on("/float", HTTP_POST, handlePostFloat);
   server.begin();
 
   restartExtractorCycle();
@@ -1268,6 +1354,7 @@ void loop() {
     readSensor();
   }
 
+  updateFloat();
   updateExtractor();
   updateDiscovery();
   updateHistory();
