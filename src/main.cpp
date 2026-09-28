@@ -24,7 +24,7 @@ static const int DHT_PIN = 4;
 static const int MOSFET_PIN = 26;  // TRIG/PWM del módulo MOSFET (humidificador)
 static const int EXTRACTOR_PIN = 27;  // IN del módulo relé del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
-static const int FLOAT_PIN = 33;      // Flotante del tanque a GND: cierra el circuito cuando está vacío
+static const int FLOAT_PIN = 22;      // Flotante del tanque a GND: cierra el circuito cuando está vacío
 static const bool RELAY_ACTIVE_HIGH = false;  // Estos módulos se activan con señal baja (LOW = relé cerrado)
 static const unsigned long EXTRACTOR_MAX_SEC = 86400;  // 24 h
 static const unsigned long DHT_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas

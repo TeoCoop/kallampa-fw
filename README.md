@@ -21,7 +21,7 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | Relé calefacción | DC− (GND) | GND | |
 | Relé calefacción | IN | GPIO25 | Señal del generador de calor. |
 | Relé calefacción | COM + NO | Cable de fase del generador de calor | Igual que el extractor. **220V: hacerlo sin tensión y bien aislado.** Revisar que el consumo del calefactor no supere los 10A del relé. |
-| Flotante del tanque | Cable 1 / Cable 2 | GPIO33 / GND | Da lo mismo cuál va a cada lado. Tiene que **cerrar el circuito cuando el tanque está vacío**. Usa el pull-up interno, no lleva resistencia. |
+| Flotante del tanque | Cable 1 / Cable 2 | GPIO22 / GND | Da lo mismo cuál va a cada lado. Tiene que **cerrar el circuito cuando el tanque está vacío**. Usa el pull-up interno, no lleva resistencia. |
 | Botón BOOT | — | GPIO0 | Ya viene en la placa. Mantenerlo apretado al encender borra las credenciales WiFi. |
 
 Los pines se definen en `src/main.cpp` (`DHT_PIN`, `MOSFET_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
