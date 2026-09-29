@@ -968,6 +968,18 @@
                   </select>
                 </div>
               </div>
+              <label class="option">
+                <span>No prender con humedad baja</span>
+                <span class="switch">
+                  <input type="checkbox" id="extHumEnabled" aria-label="No prender el extractor con humedad baja">
+                  <span class="track"></span>
+                </span>
+              </label>
+              <div class="field">
+                <label for="extHumMin">Humedad mínima para prender (%)</label>
+                <input id="extHumMin" type="number" min="0" max="100" step="1" inputmode="numeric" required>
+              </div>
+              <p class="help">Con la humedad debajo del mínimo, o sin lectura del sensor, termina la fase prendida y no vuelve a prender hasta que suba.</p>
               <button type="submit" id="ext-save">Guardar</button>
             </form>
           </div>
@@ -1154,6 +1166,7 @@
   const MAX_SEC = 86400;
   let extRemaining = null;
   let extEnabledSaved = false;
+  let extHumEnabledSaved = false;
   let extOn = false;
 
   function formatRemaining(sec) {
@@ -1165,12 +1178,16 @@
   }
 
   let extPaused = false;
+  let extWaitingHum = false;
+  let extHumMinSaved = null;
 
-  function renderExtractor(on, remaining, paused) {
+  function renderExtractor(on, remaining, paused, waitingHum) {
     renderDeviceBadge("extractor", extEnabledSaved, on);
     if (extEnabledSaved && paused) $("extractor").textContent = "EN PAUSA";
+    else if (extEnabledSaved && waitingHum) $("extractor").textContent = "EN ESPERA";
     extOn = on;
     extPaused = paused;
+    extWaitingHum = waitingHum;
     extRemaining = remaining;
     renderCountdown();
   }
@@ -1183,6 +1200,9 @@
         node.textContent = id === "ext-now" ? "Desactivado" : "Desactivado: el extractor queda apagado.";
       } else if (extPaused) {
         node.textContent = id === "ext-now" ? "En pausa · sin agua" : "En pausa por falta de agua: vuelve a arrancar cuando se llene el tanque.";
+      } else if (extWaitingHum) {
+        node.textContent = id === "ext-now" ? "En espera · humedad baja"
+          : "En espera: la humedad está debajo de " + extHumMinSaved + " %; se prende cuando suba.";
       } else if (extRemaining === null) {
         node.textContent = extOn ? "Prendido" : "Apagado";
       } else {
@@ -1220,6 +1240,10 @@
       $("extEnabled").checked = cfg.enabled;
       setTime("extOff", "extOffUnit", cfg.offSec);
       setTime("extOn", "extOnUnit", cfg.onSec);
+      extHumEnabledSaved = cfg.humEnabled;
+      $("extHumEnabled").checked = cfg.humEnabled;
+      $("extHumMin").value = cfg.humMin;
+      extHumMinSaved = cfg.humMin;
     } catch {
       showMessage("No se pudo cargar la configuración del extractor.", "error", "ext-message");
     }
@@ -1236,16 +1260,28 @@
       showMessage("Los tiempos deben ser números enteros entre 1 segundo y 24 horas.", "error", "ext-message");
       return false;
     }
+    const humMin = $("extHumMin").value === "" ? NaN : Number($("extHumMin").value);
+    const validHum = Number.isInteger(humMin) && humMin >= 0 && humMin <= 100;
+    $("extHumMin").setAttribute("aria-invalid", !validHum);
+    if (!validHum) {
+      showMessage("La humedad mínima tiene que ser un número entero de 0 a 100.", "error", "ext-message");
+      return false;
+    }
 
     $("ext-save").disabled = true;
     try {
       const res = await fetch("/extractor", {
         method: "POST",
-        body: new URLSearchParams({ enabled: $("extEnabled").checked ? 1 : 0, offSec, onSec }),
+        body: new URLSearchParams({
+          enabled: $("extEnabled").checked ? 1 : 0, offSec, onSec,
+          humEnabled: $("extHumEnabled").checked ? 1 : 0, humMin,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al guardar.");
       extEnabledSaved = data.enabled;
+      extHumEnabledSaved = data.humEnabled;
+      extHumMinSaved = data.humMin;
       showMessage("Guardado.", "ok", "ext-message");
       update();
       return true;
@@ -1265,6 +1301,10 @@
   // El interruptor guarda al instante; si falla, vuelve a su posición anterior
   $("extEnabled").addEventListener("change", async () => {
     if (!(await saveExtractor())) $("extEnabled").checked = extEnabledSaved;
+  });
+
+  $("extHumEnabled").addEventListener("change", async () => {
+    if (!(await saveExtractor())) $("extHumEnabled").checked = extHumEnabledSaved;
   });
 
   // ---- Flotante del tanque de agua ----
@@ -1632,7 +1672,7 @@
     renderDeviceBadge("hum-badge", humidity.enabled, data.humidifier);
     renderDeviceBadge("heat-badge", heating.enabled, data.heater);
     renderControls(data);
-    renderExtractor(data.extractor, data.extractorRemaining ?? null, !!data.extractorPaused);
+    renderExtractor(data.extractor, data.extractorRemaining ?? null, !!data.extractorPaused, !!data.extractorWaitingHum);
     renderWater(data);
   }
 

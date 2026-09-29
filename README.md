@@ -65,6 +65,14 @@ Desde la página se configura un ciclo que alterna **tiempo apagado** y **tiempo
 - La posición dentro del ciclo no se guarda: al volver la luz, el ciclo arranca de nuevo desde la fase encendida.
 - Mientras el ESP32 se conecta al WiFi al arrancar, el extractor queda apagado; el ciclo empieza cuando ya está conectado.
 
+En **Ajustar** también está **No prender con humedad baja** (desactivado por defecto), con una **humedad mínima para prender** (por defecto 80 %):
+
+- Si la humedad está debajo del mínimo cuando le toca prender, el extractor queda **en espera** y no prende. Si ya estaba prendido, termina su fase prendida normalmente.
+- El tiempo apagado sigue corriendo mientras tanto: cuando la humedad vuelve a llegar al mínimo, prende enseguida si ya le tocaba, o cuando le toque.
+- Si el sensor deja de dar lecturas válidas por más de 2 min, se toma como humedad baja: el extractor no vuelve a prender hasta que el sensor responda.
+- Si al activar el ciclo o guardar la humedad ya está baja, arranca en espera en vez de prendido.
+- En el Registro aparece "Extractor en espera: humedad debajo de X %".
+
 ## Tanque de agua (flotante)
 
 Un flotante en el tanque del humidificador avisa cuando se queda sin agua. En la tarjeta **Tanque de agua** del panel:
@@ -207,12 +215,12 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 | `GET /history?range=1h\|2h\|6h\|24h\|7d` | CSV de InfluxDB con `_time`, `temperatura` (promedio) y `calefaccion_seg` (suma) por ventana; el header `X-Window-Min` indica el tamaño de la ventana. 409 si el historial no está configurado, 502 si InfluxDB responde error |
 | `POST /history-test` | Toma una muestra y la envía ya; responde el estado o `{"error":"…"}` con el motivo |
 | `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
-| `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"retrying":false,"humidifier":false,"heater":false,"extractor":true,"extractorPaused":false,"extractorRemaining":12,"water":"ok"}` (`ok`: hay una lectura válida de hace menos de 2 min; `retrying`: la última lectura falló y se usa la anterior; `extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado o en pausa; `extractorPaused`: ciclo en pausa por falta de agua; `water`: `"ok"`, `"empty"` o `null` si el flotante está desactivado). Permite lecturas desde otros equipos (CORS) |
+| `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"retrying":false,"humidifier":false,"heater":false,"extractor":true,"extractorPaused":false,"extractorWaitingHum":false,"extractorRemaining":12,"water":"ok"}` (`ok`: hay una lectura válida de hace menos de 2 min; `retrying`: la última lectura falló y se usa la anterior; `extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado, en pausa o en espera; `extractorPaused`: ciclo en pausa por falta de agua; `extractorWaitingHum`: le toca prender pero espera que suba la humedad; `water`: `"ok"`, `"empty"` o `null` si el flotante está desactivado). Permite lecturas desde otros equipos (CORS) |
 | `GET /config` | Control de humedad: `{"enabled":true,"humMin":85,"humMax":95}` |
 | `POST /config` | Parámetros de formulario `enabled` (`1`/`0`, opcional), `humMin` y `humMax`; responde la config guardada o 400 si no es válida |
 | `GET /heater` | `{"enabled":false,"tempMin":20.0,"tempMax":24.0}` |
 | `POST /heater` | Parámetros de formulario `enabled` (`1`/`0`), `tempMin` y `tempMax` (0 a 50); responde la config guardada o 400 si no es válida |
-| `GET /extractor` | `{"enabled":true,"offSec":900,"onSec":30}` |
-| `POST /extractor` | Parámetros de formulario `enabled` (`1`/`0`), `offSec` y `onSec` (1 a 86400); responde la config guardada o 400 si no es válida |
+| `GET /extractor` | `{"enabled":true,"offSec":900,"onSec":30,"humEnabled":false,"humMin":80}` |
+| `POST /extractor` | Parámetros de formulario `enabled` (`1`/`0`), `offSec` y `onSec` (1 a 86400), y opcionales `humEnabled` (`1`/`0`) y `humMin` (0 a 100); responde la config guardada o 400 si no es válida |
 | `GET /float` | Flotante: `{"enabled":true,"cutHum":true,"cutExt":false,"water":"ok"}` |
 | `POST /float` | Parámetros de formulario `enabled`, `cutHum` y `cutExt` (`1`/`0`); responde la config guardada |

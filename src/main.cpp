@@ -124,6 +124,9 @@ unsigned long extOffSec = 900;
 unsigned long extOnSec = 30;
 bool extractorOn = false;
 unsigned long phaseStartedAt = 0;
+bool extHumEnabled = false;  // No prender el extractor con humedad baja
+int extHumMin = 80;
+bool extWaitingHum = false;  // Le toca prender pero la humedad no lo deja
 
 // Flotante del tanque de agua
 bool floatEnabled = false;
@@ -223,6 +226,11 @@ bool humCutByWater() {
 
 bool extCutByWater() {
   return floatEnabled && waterEmpty && floatCutExt;
+}
+
+// Sin lectura válida se toma como humedad baja
+bool extBlockedByHum() {
+  return extHumEnabled && (!lastReadOk || lastHumidity < extHumMin);
 }
 
 // Histéresis: enciende por debajo del mínimo, apaga al llegar al máximo
@@ -663,10 +671,12 @@ void handleSensors() {
   json += extractorOn ? "true" : "false";
   json += ",\"extractorPaused\":";  // Pausado por falta de agua
   json += extEnabled && extCutByWater() ? "true" : "false";
+  json += ",\"extractorWaitingHum\":";  // Esperando que suba la humedad para prender
+  json += extEnabled && !extCutByWater() && extWaitingHum ? "true" : "false";
   json += ",\"water\":";
   json += !floatEnabled ? "null" : waterEmpty ? "\"empty\"" : "\"ok\"";
   json += ",\"extractorRemaining\":";
-  if (extEnabled && !extCutByWater()) {
+  if (extEnabled && !extCutByWater() && !extWaitingHum) {
     unsigned long elapsed = millis() - phaseStartedAt;
     unsigned long phase = extractorPhaseMs();
     json += String(elapsed >= phase ? 0 : (phase - elapsed + 999) / 1000);
@@ -778,14 +788,18 @@ void handleHeaterLearn() {
 
 void setExtractor(bool on) {
   extractorOn = on;
+  extWaitingHum = false;
   phaseStartedAt = millis();
   setRelay(EXTRACTOR_PIN, on);
   logMsg(on ? "Extractor ENCENDIDO" : "Extractor APAGADO");
 }
 
-// El ciclo arranca siempre con la fase encendida (salvo que esté en pausa por falta de agua)
+// El ciclo arranca siempre con la fase encendida (salvo que esté en pausa por falta de agua).
+// Con humedad baja arranca apagado pero con la fase vencida: prende apenas suba.
 void restartExtractorCycle() {
-  setExtractor(extEnabled && !extCutByWater());
+  bool blocked = extEnabled && !extCutByWater() && extBlockedByHum();
+  setExtractor(extEnabled && !extCutByWater() && !blocked);
+  if (blocked) phaseStartedAt = millis() - extOffSec * 1000UL;
 }
 
 unsigned long extractorPhaseMs() {
@@ -794,15 +808,24 @@ unsigned long extractorPhaseMs() {
 
 void updateExtractor() {
   if (!extEnabled || extCutByWater()) return;
-  if (millis() - phaseStartedAt >= extractorPhaseMs()) {
-    setExtractor(!extractorOn);
+  if (millis() - phaseStartedAt < extractorPhaseMs()) return;
+  // Si está prendido termina su fase; lo que no hace es volver a prender con humedad baja
+  if (!extractorOn && extBlockedByHum()) {
+    if (!extWaitingHum) {
+      extWaitingHum = true;
+      logMsg("Extractor en espera: humedad debajo de %d %%", extHumMin);
+    }
+    return;
   }
+  setExtractor(!extractorOn);
 }
 
 String extractorJson() {
   return "{\"enabled\":" + String(extEnabled ? "true" : "false") +
          ",\"offSec\":" + String(extOffSec) +
-         ",\"onSec\":" + String(extOnSec) + "}";
+         ",\"onSec\":" + String(extOnSec) +
+         ",\"humEnabled\":" + String(extHumEnabled ? "true" : "false") +
+         ",\"humMin\":" + String(extHumMin) + "}";
 }
 
 void handleGetExtractor() {
@@ -820,13 +843,25 @@ void handlePostExtractor() {
     server.send(400, "application/json", "{\"error\":\"Los tiempos deben estar entre 1 segundo y 24 horas\"}");
     return;
   }
+  int newHumMin = server.hasArg("humMin") ? server.arg("humMin").toInt() : extHumMin;
+  if (newHumMin < 0 || newHumMin > 100) {
+    server.send(400, "application/json", "{\"error\":\"La humedad mínima debe estar entre 0 y 100\"}");
+    return;
+  }
+  if (server.hasArg("humEnabled")) {
+    extHumEnabled = server.arg("humEnabled") == "1";
+    prefs.putBool("extHumEn", extHumEnabled);
+  }
+  extHumMin = newHumMin;
+  prefs.putInt("extHumMin", extHumMin);
   extEnabled = server.arg("enabled") == "1";
   extOffSec = newOff;
   extOnSec = newOn;
   prefs.putBool("extEn", extEnabled);
   prefs.putULong("extOff", extOffSec);
   prefs.putULong("extOn", extOnSec);
-  logMsg("Extractor: activo=%d apagado=%lus encendido=%lus", extEnabled, extOffSec, extOnSec);
+  logMsg("Extractor: activo=%d apagado=%lus encendido=%lus humedad baja=%d (mín %d %%)",
+         extEnabled, extOffSec, extOnSec, extHumEnabled, extHumMin);
   restartExtractorCycle();
   server.send(200, "application/json", extractorJson());
 }
@@ -1282,6 +1317,8 @@ void setup() {
   extEnabled = prefs.getBool("extEn", extEnabled);
   extOffSec = prefs.getULong("extOff", extOffSec);
   extOnSec = prefs.getULong("extOn", extOnSec);
+  extHumEnabled = prefs.getBool("extHumEn", extHumEnabled);
+  extHumMin = prefs.getInt("extHumMin", extHumMin);
   floatEnabled = prefs.getBool("floatEn", floatEnabled);
   floatCutHum = prefs.getBool("floatHum", floatCutHum);
   floatCutExt = prefs.getBool("floatExt", floatCutExt);
