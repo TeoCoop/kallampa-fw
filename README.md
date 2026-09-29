@@ -21,7 +21,7 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | Relé calefacción | DC− (GND) | GND | |
 | Relé calefacción | IN | GPIO25 | Señal del generador de calor. |
 | Relé calefacción | COM + NO | Cable de fase del generador de calor | Igual que el extractor. **220V: hacerlo sin tensión y bien aislado.** Revisar que el consumo del calefactor no supere los 10A del relé. |
-| Flotante del tanque | Cable 1 / Cable 2 | GPIO13 / GND | Da lo mismo cuál va a cada lado. El flotante usado **abre el circuito cuando el tanque está vacío** y lo cierra con agua. Usa el pull-up interno, no lleva resistencia. |
+| Flotante del tanque | Cable 1 / Cable 2 | GPIO13 / GND | Da lo mismo cuál va a cada lado. El flotante usado **cierra el circuito cuando el tanque está vacío** y lo abre con agua. Usa el pull-up interno, no lleva resistencia. |
 | Botón BOOT | — | GPIO0 | Ya viene en la placa. Mantenerlo apretado al encender borra las credenciales WiFi. |
 
 Los pines se definen en `src/main.cpp` (`DHT_PIN`, `MOSFET_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
@@ -73,8 +73,8 @@ Un flotante en el tanque del humidificador avisa cuando se queda sin agua. En la
 - En **Ajustar** se elige qué se apaga cuando el tanque está vacío: el **humidificador** (por defecto), el **extractor** o ambos.
 - Sin agua, el humidificador queda apagado aunque la humedad esté baja, y el ciclo del extractor queda en pausa. Cuando se vuelve a llenar, el humidificador retoma el control y el extractor reinicia el ciclo desde la fase encendida.
 - El estado cambia recién cuando el flotante se queda quieto 3 s, para que el movimiento del agua no lo haga saltar. En el Registro aparece "Tanque de agua VACÍO" / "Tanque de agua con agua".
-- Si el cable del flotante se corta, el equipo lo toma como "vacío" y apaga lo elegido.
-- Si se usa un flotante que funciona al revés (cierra el circuito cuando está vacío), cambiar `FLOAT_EMPTY_LEVEL` a `LOW` en `src/main.cpp`.
+- Si el cable del flotante se corta, el equipo lo toma como "con agua".
+- Si se usa un flotante que funciona al revés (abre el circuito cuando está vacío), cambiar `FLOAT_EMPTY_LEVEL` a `HIGH` en `src/main.cpp`.
 
 ## Primer uso
 

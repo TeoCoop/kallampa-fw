@@ -26,7 +26,7 @@ static const int EXTRACTOR_PIN = 27;  // IN del módulo relé del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
 static const int FLOAT_PIN = 13;      // Flotante del tanque a GND
 static const bool RELAY_ACTIVE_HIGH = false;  // Estos módulos se activan con señal baja (LOW = relé cerrado)
-static const int FLOAT_EMPTY_LEVEL = HIGH;    // Este flotante abre el circuito cuando el tanque está vacío
+static const int FLOAT_EMPTY_LEVEL = LOW;     // Este flotante cierra el circuito cuando el tanque está vacío
 static const unsigned long EXTRACTOR_MAX_SEC = 86400;  // 24 h
 static const unsigned long DHT_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas
 static const unsigned long FLOAT_DEBOUNCE_MS = 3000;  // El flotante tiene que quedarse quieto 3 s (el agua se mueve)
