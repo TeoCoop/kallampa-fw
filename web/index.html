@@ -440,6 +440,11 @@
 
   .time input { flex: 1; min-width: 0; }
 
+  #ext-times { flex-wrap: wrap; }
+  #ext-times > .field { flex: 1 1 160px; }
+  #ext-times > .option,
+  #ext-times > .help { flex-basis: 100%; }
+
   .switch {
     display: inline-flex;
     align-items: center;
@@ -975,11 +980,11 @@
                   <span class="track"></span>
                 </span>
               </label>
+              <p class="help">Con la humedad debajo del mínimo, o sin lectura del sensor, termina la fase prendida y no vuelve a prender hasta que suba.</p>
               <div class="field">
                 <label for="extHumMin">Humedad mínima para prender (%)</label>
                 <input id="extHumMin" type="number" min="0" max="100" step="1" inputmode="numeric" required>
               </div>
-              <p class="help">Con la humedad debajo del mínimo, o sin lectura del sensor, termina la fase prendida y no vuelve a prender hasta que suba.</p>
               <button type="submit" id="ext-save">Guardar</button>
             </form>
           </div>
