@@ -140,12 +140,12 @@ Alternativa local con Docker: `docker run -d -p 8086:8086 -v influxdb:/var/lib/i
 
 ```
 ambiente,device=carpa-1,id=0c2cc8 temperatura=21.3,humedad=85.2 <epoch>
-actuadores,device=carpa-1,id=0c2cc8 humidificador_seg=120i,calefaccion_seg=0i <epoch>
+actuadores,device=carpa-1,id=0c2cc8 humidificador_seg=120i,calefaccion_seg=0i,extractor_seg=60i <epoch>
 ```
 
 - `device` es el nombre del equipo; `id` sale de la MAC y no cambia aunque se renombre.
 - `ambiente` se omite si en ese momento la lectura del DHT22 es inválida.
-- `humidificador_seg` / `calefaccion_seg` son los segundos encendido dentro de cada intervalo: sumándolos se obtiene el tiempo total de cualquier período.
+- `humidificador_seg` / `calefaccion_seg` / `extractor_seg` son los segundos encendido dentro de cada intervalo: sumándolos se obtiene el tiempo total de cualquier período.
 - La hora se toma por NTP (UTC). Hasta sincronizarla, no se toman muestras.
 - Si no hay conexión o InfluxDB no responde, las muestras quedan en la RAM del equipo (hasta ~12 h, máximo 144 muestras) y se envían en el próximo intento. Se pierden si el ESP32 se reinicia.
 - El envío es por `https` cifrado pero sin verificar el certificado del servidor.
@@ -159,7 +159,7 @@ from(bucket: "cultivo")
   |> range(start: -7d)
   |> filter(fn: (r) => r._measurement == "ambiente" and r.device == "carpa-1")
 
-// Horas encendido por día del humidificador y la calefacción
+// Horas encendido por día del humidificador, la calefacción y el extractor
 from(bucket: "cultivo")
   |> range(start: -7d)
   |> filter(fn: (r) => r._measurement == "actuadores" and r.device == "carpa-1")
@@ -174,6 +174,7 @@ La tarjeta **Calefacción · historial** (debajo de la de Calefacción) muestra 
 - **Barra azul:** en esa ventana la calefacción estuvo prendida. **Barra gris:** estuvo apagada.
 - Las líneas punteadas son la mínima y la máxima configuradas.
 - Pasando el mouse (o tocando) una barra se ve la hora, la temperatura promedio y cuántos minutos estuvo prendida.
+- En la pestaña **Humedad** las barras son la humedad (azul = humidificador prendido) y la **línea ámbar**, con su eje a la derecha, son los minutos que estuvo prendido el extractor en cada ventana. Antes de que se registrara el extractor la línea no aparece.
 - Cada barra es una ventana de 1 min (1 h, 2 h y 6 h), 5 min (24 h) o 30 min (7 d), o el intervalo de muestreo si es mayor. Para ver bien 1 h y 2 h conviene muestrear cada 1 min (con 5 min, 1 h son solo 12 barras).
 
 Debajo, la **tabla de ciclos** (un ciclo = una racha de calefacción prendida), para entender cuánto calienta y cuánto mantiene:
@@ -212,7 +213,7 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 | `GET /logs?since=<seq>` | Registro: `{"now":123456,"last":42,"entries":[{"seq":42,"ms":120000,"repeat":1,"text":"Extractor ENCENDIDO"}]}` con los mensajes posteriores a `since` (`now` y `ms` son milisegundos desde el arranque) |
 | `GET /history-config` | Historial: `{"enabled":true,"url":"…","org":"…","bucket":"…","tokenSet":true,"intervalMin":5,"pending":0,"lastOk":1760000000,"lastError":""}` (el token nunca se devuelve) |
 | `POST /history-config` | Parámetros de formulario `enabled` (`1`/`0`), `url`, `org`, `bucket`, `token` (vacío = mantener el guardado) e `interval` (minutos, 1–60); 400 si no es válida |
-| `GET /history?range=1h\|2h\|6h\|24h\|7d` | CSV de InfluxDB con `_time`, `temperatura` (promedio) y `calefaccion_seg` (suma) por ventana; el header `X-Window-Min` indica el tamaño de la ventana. 409 si el historial no está configurado, 502 si InfluxDB responde error |
+| `GET /history?range=1h\|2h\|6h\|24h\|7d&kind=temp\|hum` | CSV de InfluxDB por ventana con `_time` y, con `kind=temp` (por defecto), `temperatura` (promedio) y `calefaccion_seg` (suma); con `kind=hum`, `humedad`, `humidificador_seg` y `extractor_seg`; el header `X-Window-Min` indica el tamaño de la ventana. 409 si el historial no está configurado, 502 si InfluxDB responde error |
 | `POST /history-test` | Toma una muestra y la envía ya; responde el estado o `{"error":"…"}` con el motivo |
 | `GET /devices` | Controladores encontrados en la red, este primero: `[{"name":"carpa-1","ip":"…","self":true}, …]` |
 | `/sensors` | `{"temperature":24.3,"humidity":81.2,"ok":true,"retrying":false,"humidifier":false,"heater":false,"extractor":true,"extractorPaused":false,"extractorWaitingHum":false,"extractorRemaining":12,"water":"ok"}` (`ok`: hay una lectura válida de hace menos de 2 min; `retrying`: la última lectura falló y se usa la anterior; `extractorRemaining`: segundos hasta el próximo cambio, `null` si el ciclo está desactivado, en pausa o en espera; `extractorPaused`: ciclo en pausa por falta de agua; `extractorWaitingHum`: le toca prender pero espera que suba la humedad; `water`: `"ok"`, `"empty"` o `null` si el flotante está desactivado). Permite lecturas desde otros equipos (CORS) |

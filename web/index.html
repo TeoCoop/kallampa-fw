@@ -47,6 +47,7 @@
     /* Gráfico: prendida (acento) / apagada (gris de énfasis). Validados con validate_palette.js */
     --chart-on: #0c5cfc;
     --chart-off: #8b93a4;
+    --chart-ext: #b7791f;  /* Línea del extractor */
   }
 
   @media (prefers-color-scheme: dark) {
@@ -68,6 +69,7 @@
       --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
       --chart-on: #5b8ffc;
       --chart-off: #5b6376;
+      --chart-ext: #e5b454;
     }
   }
 
@@ -640,6 +642,8 @@
   .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
   .legend-swatch.on { background: var(--chart-on); }
   .legend-swatch.off { background: var(--chart-off); }
+  .legend-swatch.ext { height: 2px; border-radius: 1px; background: var(--chart-ext); }
+  .legend-item[hidden] { display: none; }
 
   .chart {
     position: relative;
@@ -653,7 +657,9 @@
   .chart .bar-on { fill: var(--chart-on); }
   .chart .bar-off { fill: var(--chart-off); }
   .chart .ref-line { stroke: var(--foreground); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.7; }
-  .chart .ref-label { fill: var(--foreground); font-family: var(--font-mono); font-size: 10px; }
+  .chart .ref-label { fill: var(--foreground); font-family: var(--font-mono); font-size: 10px; paint-order: stroke; stroke: var(--card); stroke-width: 3px; }
+  .chart .ext-line { fill: none; stroke: var(--chart-ext); stroke-width: 1.5; stroke-linejoin: round; }
+  .chart .ext-axis { fill: var(--chart-ext); }
   .chart .hover-col { fill: var(--foreground); opacity: 0.06; }
 
   .chart-empty {
@@ -1054,6 +1060,7 @@
       <div class="legend">
         <span class="legend-item"><span class="legend-swatch on"></span><span id="legend-on">Calefacción prendida</span></span>
         <span class="legend-item"><span class="legend-swatch off"></span><span id="legend-off">Apagada</span></span>
+        <span class="legend-item" id="legend-extra" hidden><span class="legend-swatch ext"></span><span id="legend-extra-label"></span></span>
         <span class="legend-item">- - - mínima y máxima configuradas</span>
       </div>
       <div class="chart" id="chart"><div class="chart-empty">Cargando…</div></div>
@@ -1813,12 +1820,13 @@
   // ---- Gráficos (historial desde InfluxDB, vía el ESP32) ----
   const SVG_NS = "http://www.w3.org/2000/svg";
   const RANGE_MS = { "1h": 3600e3, "2h": 2 * 3600e3, "6h": 6 * 3600e3, "24h": 24 * 3600e3, "7d": 7 * 24 * 3600e3 };
-  // Qué se grafica: temperatura con la calefacción o humedad con el humidificador
+  // Qué se grafica: temperatura con la calefacción o humedad con el humidificador (y el extractor como línea)
   const KINDS = {
     temp: { valueField: "temperatura", onField: "calefaccion_seg", valueLabel: "Temperatura", unit: "°C", decimals: 1,
             onLabel: "Calefacción", onWord: "prendida", offWord: "apagada", ctl: () => heating },
     hum: { valueField: "humedad", onField: "humidificador_seg", valueLabel: "Humedad", unit: "%", decimals: 0,
-           onLabel: "Humidificador", onWord: "prendido", offWord: "apagado", ctl: () => humidity },
+           onLabel: "Humidificador", onWord: "prendido", offWord: "apagado", ctl: () => humidity,
+           extraField: "extractor_seg", extraLabel: "Extractor" },
   };
   let chartRange = "24h";
   let chartKind = "temp";
@@ -1837,8 +1845,8 @@
     return node;
   }
 
-  // CSV de InfluxDB (con encabezado, sin anotaciones) → [{ t: Date, value: número|null, on: segundos }]
-  function parseInfluxCsv(text, valueField, onField) {
+  // CSV de InfluxDB (con encabezado, sin anotaciones) → [{ t: Date, value: número|null, on: segundos, extra: segundos|null }]
+  function parseInfluxCsv(text, valueField, onField, extraField) {
     const byTime = new Map();
     let header = null;
     for (const line of text.split(/\r?\n/)) {
@@ -1848,9 +1856,10 @@
       const get = (name) => { const i = header.indexOf(name); return i >= 0 ? cols[i] : ""; };
       const time = get("_time");
       if (!time) continue;
-      const row = byTime.get(time) || { t: new Date(time), value: null, on: 0 };
+      const row = byTime.get(time) || { t: new Date(time), value: null, on: 0, extra: null };
       if (get(valueField) !== "") row.value = Number(get(valueField));
       if (get(onField) !== "") row.on = Number(get(onField));
+      if (extraField && get(extraField) !== "") row.extra = Number(get(extraField));
       byTime.set(time, row);
     }
     return [...byTime.values()].sort((a, b) => a.t - b.t);
@@ -1905,7 +1914,8 @@
     const y = (v) => m.top + (1 - (v - lo) / (hi - lo)) * plotH;
 
     const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
-      "aria-label": valueLabel + " en el tiempo; las barras azules son ventanas con " + onLabel.toLowerCase() + " " + kind.onWord });
+      "aria-label": valueLabel + " en el tiempo; las barras azules son ventanas con " + onLabel.toLowerCase() + " " + kind.onWord
+        + (kind.extraField ? "; la línea son los minutos con el " + kind.extraLabel.toLowerCase() + " prendido" : "") });
 
     // Grilla y eje Y
     for (let v = lo; v <= hi + 1e-9; v += step) {
@@ -1953,12 +1963,36 @@
       }));
     }
 
-    // Líneas de referencia (mínima / máxima) con etiqueta directa
+    // Segundo eje (derecha): minutos prendido del extractor por ventana, como línea escalonada.
+    // Las ventanas sin dato (muestras anteriores a que se registrara) cortan la línea.
+    const extraAxis = !!kind.extraField;
+    if (extraAxis) {
+      const windowMin = windowSec / 60;
+      const ey = (sec) => m.top + (1 - Math.min(sec / windowSec, 1)) * plotH;
+      svg.append(svgEl("text", { class: "axis-label ext-axis", x: m.left + plotW + 6, y: ey(0) + 3 }, "0"));
+      svg.append(svgEl("text", { class: "axis-label ext-axis", x: m.left + plotW + 6, y: ey(windowSec) + 3 }, windowMin + " min"));
+      let d = "";
+      let prevEnd = null;
+      for (const r of rows) {
+        const x0 = Math.max(x(r.t.getTime()), m.left);
+        const x1 = Math.min(x(r.t.getTime() + windowSec * 1000), m.left + plotW);
+        if (r.extra === null || x1 <= m.left || x0 >= m.left + plotW) { prevEnd = null; continue; }
+        const ly = ey(r.extra);
+        d += (prevEnd !== null && Math.abs(prevEnd - x0) < 0.5 ? `V${ly}` : `M${x0},${ly}`) + `H${x1}`;
+        prevEnd = x1;
+      }
+      if (d) svg.append(svgEl("path", { class: "ext-line", d }));
+    }
+
+    // Líneas de referencia (mínima / máxima) con etiqueta directa.
+    // Con segundo eje la etiqueta va adentro, sobre la línea, para no pisar el eje derecho.
     for (const line of refLines) {
       if (line.value == null) continue;
       const ly = y(line.value);
       svg.append(svgEl("line", { class: "ref-line", x1: m.left, x2: m.left + plotW, y1: ly, y2: ly }));
-      svg.append(svgEl("text", { class: "ref-label", x: m.left + plotW + 4, y: ly + 3 }, line.label));
+      svg.append(extraAxis
+        ? svgEl("text", { class: "ref-label", x: m.left + plotW - 4, y: ly - 4, "text-anchor": "end" }, line.label)
+        : svgEl("text", { class: "ref-label", x: m.left + plotW + 4, y: ly + 3 }, line.label));
     }
 
     // Hover / toque: columna resaltada + tooltip
@@ -1982,6 +2016,11 @@
         (() => { const d = el("div", ""); d.append(valueLabel + " ", el("strong", "", fmtNum(r.value, decimals) + " " + unit)); return d; })(),
         el("div", "", onLabel + ": " + (r.on > 0 ? fmtNum(onMin, onMin < 10 ? 1 : 0) + " min de " + Math.round(windowSec / 60) : offWord)),
       );
+      if (extraAxis) {
+        const extMin = r.extra / 60;
+        tip.append(el("div", "", kind.extraLabel + ": " + (r.extra === null ? "sin dato"
+          : r.extra > 0 ? fmtNum(extMin, extMin < 10 ? 1 : 0) + " min de " + Math.round(windowSec / 60) : "apagado")));
+      }
       tip.hidden = false;
       const cx = ((x(r.t.getTime()) + slotW / 2) / width) * rect.width;
       const left = Math.min(Math.max(cx - tip.offsetWidth / 2, 0), rect.width - tip.offsetWidth);
@@ -2122,6 +2161,15 @@
     stat(kind.onLabel + " " + kind.onWord, formatDuration(onSec * 1000),
       Math.round((onSec / coveredSec) * 100) + " % del tiempo");
 
+    if (kind.extraField) {
+      const withExtra = rows.filter((r) => r.extra !== null);
+      if (withExtra.length) {
+        const extSec = withExtra.reduce((a, r) => a + r.extra, 0);
+        stat(kind.extraLabel + " prendido", formatDuration(extSec * 1000),
+          Math.round((extSec / (withExtra.length * windowSec)) * 100) + " % del tiempo");
+      }
+    }
+
     const watts = ctl.cfg?.watts;
     if (watts) {
       const kwh = (onSec / 3600) * (watts / 1000);
@@ -2150,6 +2198,8 @@
     document.querySelectorAll("[data-kind]").forEach((b) => b.setAttribute("aria-selected", b.dataset.kind === chartKind));
     $("legend-on").textContent = kind.onLabel + " " + kind.onWord;
     $("legend-off").textContent = kind.offWord[0].toUpperCase() + kind.offWord.slice(1);
+    $("legend-extra").hidden = !kind.extraField;
+    if (kind.extraField) $("legend-extra-label").textContent = kind.extraLabel + " prendido (min por ventana)";
   }
 
   async function loadChart() {
@@ -2168,7 +2218,7 @@
         throw new Error(data.error || "No se pudo cargar el historial.");
       }
       const windowSec = Number(res.headers.get("X-Window-Min") || 5) * 60;
-      const rows = parseInfluxCsv(await res.text(), kind.valueField, kind.onField);
+      const rows = parseInfluxCsv(await res.text(), kind.valueField, kind.onField, kind.extraField);
       if (range !== chartRange || kindKey !== chartKind) return;  // El usuario cambió de vista mientras cargaba
       chartData = { rows, windowSec, range, kind: kindKey };
       drawChart();

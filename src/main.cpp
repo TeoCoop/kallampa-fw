@@ -123,6 +123,8 @@ bool extEnabled = false;
 unsigned long extOffSec = 900;
 unsigned long extOnSec = 30;
 bool extractorOn = false;
+unsigned long extractorOnSince = 0;
+unsigned long extractorOnMs = 0;
 unsigned long phaseStartedAt = 0;
 bool extHumEnabled = false;  // No prender el extractor con humedad baja
 int extHumMin = 80;
@@ -787,6 +789,10 @@ void handleHeaterLearn() {
 }
 
 void setExtractor(bool on) {
+  if (on != extractorOn) {
+    if (on) extractorOnSince = millis();
+    else extractorOnMs += millis() - extractorOnSince;
+  }
   extractorOn = on;
   extWaitingHum = false;
   phaseStartedAt = millis();
@@ -956,6 +962,7 @@ unsigned long takeOnSeconds(bool on, unsigned long &since, unsigned long &accumu
 void takeHistorySample() {
   unsigned long humSec = takeOnSeconds(humidifierOn, humidifierOnSince, humidifierOnMs);
   unsigned long heatSec = takeOnSeconds(heaterOn, heaterOnSince, heaterOnMs);
+  unsigned long extSec = takeOnSeconds(extractorOn, extractorOnSince, extractorOnMs);
   if (!historyConfigured()) return;
 
   time_t now = time(nullptr);
@@ -971,7 +978,8 @@ void takeHistorySample() {
               ",humedad=" + String(lastHumidity, 1) + " " + String((uint32_t)now) + "\n";
   }
   sample += "actuadores," + tags + " humidificador_seg=" + String(humSec) + "i" +
-            ",calefaccion_seg=" + String(heatSec) + "i " + String((uint32_t)now);
+            ",calefaccion_seg=" + String(heatSec) + "i" +
+            ",extractor_seg=" + String(extSec) + "i " + String((uint32_t)now);
 
   // Hasta ~12 h de pendientes, con un tope de muestras para no llenar la RAM
   size_t maxQueue = min((size_t)(720 / historyIntervalMin), HISTORY_QUEUE_MAX);
@@ -1151,7 +1159,7 @@ String fluxString(const String &value) {
 }
 
 // Datos para los gráficos, en CSV: valor promedio y segundos prendido por ventana.
-// kind=temp (por defecto): temperatura y calefacción; kind=hum: humedad y humidificador
+// kind=temp (por defecto): temperatura y calefacción; kind=hum: humedad, humidificador y extractor
 void handleHistory() {
   if (!historyConfigured()) {
     server.send(409, "application/json", "{\"error\":\"Configurá el historial (InfluxDB) para ver gráficos\"}");
@@ -1169,7 +1177,8 @@ void handleHistory() {
   uint16_t windowMin = max(stepMin, historyIntervalMin);
   bool hum = server.arg("kind") == "hum";
   String valueField = hum ? "humedad" : "temperatura";
-  String onField = hum ? "humidificador_seg" : "calefaccion_seg";
+  String onFilter = hum ? "(r._field == \"humidificador_seg\" or r._field == \"extractor_seg\")"
+                       : "r._field == \"calefaccion_seg\"";
 
   String every = String(windowMin) + "m";
   String query =
@@ -1180,7 +1189,7 @@ void handleHistory() {
       "  |> filter(fn: (r) => r._measurement == \"ambiente\" and r._field == \"" + valueField + "\")\n"
       "  |> aggregateWindow(every: " + every + ", fn: mean, createEmpty: false, timeSrc: \"_start\")\n"
       "h = base\n"
-      "  |> filter(fn: (r) => r._measurement == \"actuadores\" and r._field == \"" + onField + "\")\n"
+      "  |> filter(fn: (r) => r._measurement == \"actuadores\" and " + onFilter + ")\n"
       "  |> aggregateWindow(every: " + every + ", fn: sum, createEmpty: false, timeSrc: \"_start\")\n"
       // Los segundos son enteros y la temperatura no: sin esto el pivot choca por tipos distintos en _value
       "  |> toFloat()\n"
@@ -1248,8 +1257,7 @@ void startOta() {
     // Durante la actualización el loop no corre: se apagan todos los aparatos por seguridad
     setHumidifier(false);
     setHeater(false);
-    extractorOn = false;
-    setRelay(EXTRACTOR_PIN, false);
+    setExtractor(false);
     logMsg("Actualización OTA iniciada");
   });
   ArduinoOTA.onEnd([]() {
