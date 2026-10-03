@@ -21,7 +21,7 @@
 static const char *AP_PASS = "12345678";
 static const int RESET_PIN = 0;  // Botón BOOT
 static const int DHT_PIN = 4;
-static const int DHT_POWER_PIN = 33;  // VCC del módulo DHT22: se alimenta desde un pin para poder reiniciarlo
+static const int DHT_POWER_PIN = 5;   // VCC del módulo DHT22: se alimenta desde un pin para poder reiniciarlo
 static const int HUMIDIFIER_PIN = 26;  // IN del módulo relé del humidificador
 static const int EXTRACTOR_PIN = 27;  // IN del módulo relé del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción

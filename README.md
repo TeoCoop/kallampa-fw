@@ -6,7 +6,7 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 
 | Componente | Pin del componente | Pin del ESP32 | Notas |
 |---|---|---|---|
-| DHT22 | VCC (+) | GPIO33 | Se alimenta desde un pin (no del 3V3) para que el ESP32 pueda reiniciarlo si deja de leer. |
+| DHT22 | VCC (+) | GPIO5 | Se alimenta desde un pin (no del 3V3) para que el ESP32 pueda reiniciarlo si deja de leer. |
 | DHT22 | DATA (out) | GPIO4 | Si es el sensor suelto (4 patas, sin módulo), poner una resistencia de 10kΩ entre DATA y VCC (+) del sensor. Los módulos de 3 pines ya la traen. |
 | DHT22 | GND (−) | GND | |
 | Relé humidificador | DC+ (VCC) | 3V3 | Mismo modelo de módulo que el del extractor. |
