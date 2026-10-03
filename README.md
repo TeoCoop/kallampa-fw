@@ -6,8 +6,8 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 
 | Componente | Pin del componente | Pin del ESP32 | Notas |
 |---|---|---|---|
-| DHT22 | VCC (+) | 3V3 | |
-| DHT22 | DATA (out) | GPIO4 | Si es el sensor suelto (4 patas, sin módulo), poner una resistencia de 10kΩ entre DATA y 3V3. Los módulos de 3 pines ya la traen. |
+| DHT22 | VCC (+) | GPIO33 | Se alimenta desde un pin (no del 3V3) para que el ESP32 pueda reiniciarlo si deja de leer. |
+| DHT22 | DATA (out) | GPIO4 | Si es el sensor suelto (4 patas, sin módulo), poner una resistencia de 10kΩ entre DATA y VCC (+) del sensor. Los módulos de 3 pines ya la traen. |
 | DHT22 | GND (−) | GND | |
 | Relé humidificador | DC+ (VCC) | 3V3 | Mismo modelo de módulo que el del extractor. |
 | Relé humidificador | DC− (GND) | GND | |
@@ -24,7 +24,7 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | Flotante del tanque | Cable 1 / Cable 2 | GPIO13 / GND | Da lo mismo cuál va a cada lado. El flotante usado **cierra el circuito cuando el tanque está vacío** y lo abre con agua. Usa el pull-up interno, no lleva resistencia. |
 | Botón BOOT | — | GPIO0 | Ya viene en la placa. Mantenerlo apretado al encender borra las credenciales WiFi. |
 
-Los pines se definen en `src/main.cpp` (`DHT_PIN`, `HUMIDIFIER_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
+Los pines se definen en `src/main.cpp` (`DHT_PIN`, `DHT_POWER_PIN`, `HUMIDIFIER_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
 
 Se usa el contacto **NO** (normalmente abierto) de los relés para que, si el ESP32 está apagado, el humidificador, el extractor y la calefacción queden apagados. Los módulos usados se activan con señal baja (`RELAY_ACTIVE_HIGH = false`, vale para los tres relés). Si se cambian por unos que funcionen al revés (el aparato prende cuando el panel dice apagado), cambiar `RELAY_ACTIVE_HIGH` a `true` en `src/main.cpp` y volver a subir el firmware.
 

@@ -21,6 +21,7 @@
 static const char *AP_PASS = "12345678";
 static const int RESET_PIN = 0;  // Botón BOOT
 static const int DHT_PIN = 4;
+static const int DHT_POWER_PIN = 33;  // VCC del módulo DHT22: se alimenta desde un pin para poder reiniciarlo
 static const int HUMIDIFIER_PIN = 26;  // IN del módulo relé del humidificador
 static const int EXTRACTOR_PIN = 27;  // IN del módulo relé del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
@@ -31,6 +32,10 @@ static const unsigned long EXTRACTOR_MAX_SEC = 86400;  // 24 h
 static const unsigned long DHT_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas
 static const unsigned long FLOAT_DEBOUNCE_MS = 3000;  // El flotante tiene que quedarse quieto 3 s (el agua se mueve)
 static const unsigned long SENSOR_GRACE_MS = 2UL * 60 * 1000;  // Si falla, se sigue con la última lectura hasta 2 min
+static const uint8_t DHT_FAILS_BEFORE_RESET = 3;  // Lecturas fallidas seguidas antes de reiniciar el sensor
+static const unsigned long DHT_POWER_OFF_MS = 1000;  // Tiempo sin alimentación al reiniciarlo
+static const unsigned long DHT_WARMUP_MS = 2000;     // El DHT22 necesita unos segundos después de prender
+static const unsigned long DHT_RESET_MIN_INTERVAL_MS = 30000;  // Como mucho un reinicio cada 30 s
 static const unsigned long DISCOVERY_INTERVAL_MS = 30000;
 static const uint32_t DISCOVERY_TIMEOUT_MS = 3000;
 static const size_t MAX_PEERS = 20;
@@ -72,6 +77,12 @@ unsigned long lastValidAt = 0;
 unsigned long sensorFailingSince = 0;  // 0 = el sensor está leyendo bien
 bool sensorGraceExpired = false;
 unsigned long lastReadAt = 0;
+enum DhtPower { DHT_PWR_READY, DHT_PWR_OFF, DHT_PWR_WARMUP };
+DhtPower dhtPower = DHT_PWR_READY;
+unsigned long dhtPowerChangedAt = 0;
+unsigned long dhtLastResetAt = 0;
+bool dhtWasReset = false;
+uint8_t dhtFailsInRow = 0;
 
 bool humEnabled = true;
 int humMin = 85;
@@ -456,6 +467,32 @@ void restartHeater() {
   }
 }
 
+// Se corta también la línea de datos: si no, el sensor sigue alimentado a medias por el pull-up
+void dhtPowerOff() {
+  digitalWrite(DHT_POWER_PIN, LOW);
+  pinMode(DHT_PIN, OUTPUT);
+  digitalWrite(DHT_PIN, LOW);
+  dhtPower = DHT_PWR_OFF;
+  dhtPowerChangedAt = millis();
+}
+
+void dhtPowerOn() {
+  digitalWrite(DHT_POWER_PIN, HIGH);
+  dht.begin();  // Vuelve a configurar el pin de datos
+  dhtPower = DHT_PWR_WARMUP;
+  dhtPowerChangedAt = millis();
+}
+
+// Avanza el reinicio sin bloquear el loop (el panel, OTA y los relés siguen andando)
+void updateDhtPower() {
+  if (dhtPower == DHT_PWR_OFF && millis() - dhtPowerChangedAt >= DHT_POWER_OFF_MS) {
+    dhtPowerOn();
+  } else if (dhtPower == DHT_PWR_WARMUP && millis() - dhtPowerChangedAt >= DHT_WARMUP_MS) {
+    dhtPower = DHT_PWR_READY;
+    lastReadAt = millis() - DHT_INTERVAL_MS;  // Leer enseguida
+  }
+}
+
 void readSensor() {
   float t = dht.readTemperature();
   float h = dht.readHumidity();
@@ -476,9 +513,19 @@ void readSensor() {
       sensorFailingSince = 0;
     }
     sensorGraceExpired = false;
+    dhtFailsInRow = 0;
   } else {
     if (!sensorFailingSince) sensorFailingSince = millis();
     logMsg("Error leyendo el DHT22 (t=%.1f h=%.1f)", t, h);
+    if (dhtFailsInRow < 255) dhtFailsInRow++;
+    if (dhtFailsInRow >= DHT_FAILS_BEFORE_RESET &&
+        (!dhtWasReset || millis() - dhtLastResetAt >= DHT_RESET_MIN_INTERVAL_MS)) {
+      logMsg("DHT22: %u lecturas fallidas seguidas, se reinicia el sensor", dhtFailsInRow);
+      dhtFailsInRow = 0;
+      dhtWasReset = true;
+      dhtLastResetAt = millis();
+      dhtPowerOff();
+    }
   }
 
   // Una falla suelta no apaga nada: los controles siguen con la última lectura válida hasta 2 min
@@ -1277,6 +1324,8 @@ void startOta() {
 }
 
 void setup() {
+  pinMode(DHT_POWER_PIN, OUTPUT);
+  digitalWrite(DHT_POWER_PIN, HIGH);  // Prende el sensor primero así tiene tiempo de arrancar
   pinMode(HUMIDIFIER_PIN, OUTPUT);
   setRelay(HUMIDIFIER_PIN, false);
   pinMode(EXTRACTOR_PIN, OUTPUT);
@@ -1395,7 +1444,8 @@ void loop() {
   ArduinoOTA.handle();
   server.handleClient();
 
-  if (millis() - lastReadAt >= DHT_INTERVAL_MS) {
+  updateDhtPower();
+  if (dhtPower == DHT_PWR_READY && millis() - lastReadAt >= DHT_INTERVAL_MS) {
     lastReadAt = millis();
     readSensor();
   }
