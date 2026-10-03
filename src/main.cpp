@@ -21,7 +21,7 @@
 static const char *AP_PASS = "12345678";
 static const int RESET_PIN = 0;  // Botón BOOT
 static const int DHT_PIN = 4;
-static const int MOSFET_PIN = 26;  // TRIG/PWM del módulo MOSFET (humidificador)
+static const int HUMIDIFIER_PIN = 26;  // IN del módulo relé del humidificador
 static const int EXTRACTOR_PIN = 27;  // IN del módulo relé del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
 static const int FLOAT_PIN = 13;      // Flotante del tanque a GND
@@ -213,12 +213,16 @@ void handleStatus() {
   server.send(200, "application/json", "{\"status\":\"OK\"}");
 }
 
+void setRelay(int pin, bool on) {
+  digitalWrite(pin, on == RELAY_ACTIVE_HIGH ? HIGH : LOW);
+}
+
 void setHumidifier(bool on) {
   if (on == humidifierOn) return;
   humidifierOn = on;
   if (on) humidifierOnSince = millis();
   else humidifierOnMs += millis() - humidifierOnSince;
-  digitalWrite(MOSFET_PIN, on ? HIGH : LOW);
+  setRelay(HUMIDIFIER_PIN, on);
   logMsg(on ? "Humidificador ENCENDIDO" : "Humidificador APAGADO");
 }
 
@@ -244,10 +248,6 @@ void updateHumidifier() {
   } else if (lastHumidity >= humMax) {
     setHumidifier(false);
   }
-}
-
-void setRelay(int pin, bool on) {
-  digitalWrite(pin, on == RELAY_ACTIVE_HIGH ? HIGH : LOW);
 }
 
 void setHeater(bool on) {
@@ -1277,8 +1277,8 @@ void startOta() {
 }
 
 void setup() {
-  pinMode(MOSFET_PIN, OUTPUT);
-  digitalWrite(MOSFET_PIN, LOW);
+  pinMode(HUMIDIFIER_PIN, OUTPUT);
+  setRelay(HUMIDIFIER_PIN, false);
   pinMode(EXTRACTOR_PIN, OUTPUT);
   setRelay(EXTRACTOR_PIN, false);
   pinMode(HEATER_PIN, OUTPUT);

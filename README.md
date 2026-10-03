@@ -9,10 +9,10 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | DHT22 | VCC (+) | 3V3 | |
 | DHT22 | DATA (out) | GPIO4 | Si es el sensor suelto (4 patas, sin módulo), poner una resistencia de 10kΩ entre DATA y 3V3. Los módulos de 3 pines ya la traen. |
 | DHT22 | GND (−) | GND | |
-| Módulo MOSFET | TRIG/PWM | GPIO26 | Señal de encendido del humidificador (HIGH = encendido). |
-| Módulo MOSFET | GND (junto a TRIG/PWM) | GND | GND común entre el ESP32 y la fuente del humidificador. |
-| Módulo MOSFET | DC+ / DC− | Fuente 5V DC (+ / −) | Fuente aparte para el humidificador (≥1A). No usar el pin 5V/VIN del ESP32. |
-| Módulo MOSFET | OUT+ / OUT− | Humidificador (+ / −) | Solo cargas de corriente continua (5–36V DC), no sirve para 220V. |
+| Relé humidificador | DC+ (VCC) | 3V3 | Mismo modelo de módulo que el del extractor. |
+| Relé humidificador | DC− (GND) | GND | |
+| Relé humidificador | IN | GPIO26 | Señal del humidificador. |
+| Relé humidificador | COM + NO | Cable de alimentación del humidificador | Cortar un cable de la alimentación del humidificador y conectar un extremo a COM y el otro a NO. Si es de 220V, **hacerlo sin tensión y bien aislado.** |
 | Relé extractor | DC+ (VCC) | 3V3 | Módulo Tongling 3,3V DC (JQC-3FF-S-Z). |
 | Relé extractor | DC− (GND) | GND | |
 | Relé extractor | IN | GPIO27 | Señal del extractor. |
@@ -24,9 +24,9 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | Flotante del tanque | Cable 1 / Cable 2 | GPIO13 / GND | Da lo mismo cuál va a cada lado. El flotante usado **cierra el circuito cuando el tanque está vacío** y lo abre con agua. Usa el pull-up interno, no lleva resistencia. |
 | Botón BOOT | — | GPIO0 | Ya viene en la placa. Mantenerlo apretado al encender borra las credenciales WiFi. |
 
-Los pines se definen en `src/main.cpp` (`DHT_PIN`, `MOSFET_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
+Los pines se definen en `src/main.cpp` (`DHT_PIN`, `HUMIDIFIER_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
 
-Se usa el contacto **NO** (normalmente abierto) de los relés para que, si el ESP32 está apagado, el extractor y la calefacción queden apagados. Los módulos usados se activan con señal baja (`RELAY_ACTIVE_HIGH = false`, vale para los dos relés). Si se cambian por unos que funcionen al revés (el aparato prende cuando el panel dice apagado), cambiar `RELAY_ACTIVE_HIGH` a `true` en `src/main.cpp` y volver a subir el firmware.
+Se usa el contacto **NO** (normalmente abierto) de los relés para que, si el ESP32 está apagado, el humidificador, el extractor y la calefacción queden apagados. Los módulos usados se activan con señal baja (`RELAY_ACTIVE_HIGH = false`, vale para los tres relés). Si se cambian por unos que funcionen al revés (el aparato prende cuando el panel dice apagado), cambiar `RELAY_ACTIVE_HIGH` a `true` en `src/main.cpp` y volver a subir el firmware.
 
 ## Control de humedad
 
