@@ -724,13 +724,14 @@ void handleSensors() {
   json += extEnabled && !extCutByWater() && extWaitingHum ? "true" : "false";
   json += ",\"water\":";
   json += !floatEnabled ? "null" : waterEmpty ? "\"empty\"" : "\"ok\"";
-  json += ",\"extractorRemaining\":";
   if (extEnabled && !extCutByWater() && !extWaitingHum) {
     unsigned long elapsed = millis() - phaseStartedAt;
     unsigned long phase = extractorPhaseMs();
-    json += String(elapsed >= phase ? 0 : (phase - elapsed + 999) / 1000);
+    unsigned long left = elapsed >= phase ? 0 : phase - elapsed;
+    json += ",\"extractorRemaining\":" + String((left + 999) / 1000);
+    json += ",\"extractorRemainingMs\":" + String(left);  // Para que el panel cambie justo con el relé
   } else {
-    json += "null";
+    json += ",\"extractorRemaining\":null,\"extractorRemainingMs\":null";
   }
   json += "}";
   server.sendHeader("Access-Control-Allow-Origin", "*");

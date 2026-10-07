@@ -1177,6 +1177,8 @@
 
   const MAX_SEC = 86400;
   let extRemaining = null;
+  let extDeadline = null;  // performance.now() en que el ESP32 cambia el extractor
+  let extRefreshAsked = false;
   let extEnabledSaved = false;
   let extHumEnabledSaved = false;
   let extOn = false;
@@ -1193,15 +1195,23 @@
   let extWaitingHum = false;
   let extHumMinSaved = null;
 
-  function renderExtractor(on, remaining, paused, waitingHum) {
+  // remainingMs se mide desde measuredAt (performance.now() del momento en que respondió el ESP32)
+  function renderExtractor(on, remainingMs, measuredAt, paused, waitingHum) {
     renderDeviceBadge("extractor", extEnabledSaved, on);
     if (extEnabledSaved && paused) $("extractor").textContent = "EN PAUSA";
     else if (extEnabledSaved && waitingHum) $("extractor").textContent = "EN ESPERA";
     extOn = on;
     extPaused = paused;
     extWaitingHum = waitingHum;
-    extRemaining = remaining;
-    renderCountdown();
+    extDeadline = remainingMs === null ? null : measuredAt + remainingMs;
+    extRefreshAsked = false;
+    tickCountdown();
+  }
+
+  function tickCountdown() {
+    const prev = extRemaining;
+    extRemaining = extDeadline === null ? null : Math.max(0, Math.ceil((extDeadline - performance.now()) / 1000));
+    if (extRemaining !== prev) renderCountdown();
   }
 
   // Mismo texto en «Ahora» y en la tarjeta del extractor
@@ -1224,13 +1234,21 @@
     }
   }
 
+  // Se recalcula contra el reloj (no restando de a 1) para no acumular atraso;
+  // al llegar a cero pide el estado nuevo enseguida
   setInterval(() => {
-    if (extRemaining !== null && extRemaining > 0) {
-      extRemaining--;
-      renderCountdown();
-      if (extRemaining === 0) setTimeout(update, 500);
+    if (extDeadline === null) return;
+    tickCountdown();
+    if (extRemaining === 0 && !extRefreshAsked && performance.now() >= extDeadline + 50) {
+      extRefreshAsked = true;
+      update();
     }
-  }, 1000);
+  }, 100);
+
+  // Con la pestaña en segundo plano el navegador frena los relojes: al volver, se pone al día
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) update();
+  });
 
   // Muestra los segundos en la unidad más grande que los divida exacto
   function setTime(inputId, unitId, sec) {
@@ -1675,7 +1693,7 @@
     }
   });
 
-  function renderSensors(data) {
+  function renderSensors(data, measuredAt) {
     document.body.classList.toggle("sensor-error", !data.ok);
     document.body.classList.toggle("sensor-retry", !!data.retrying);
     $("temperature").textContent = data.ok ? fmt(data.temperature) : "—";
@@ -1684,16 +1702,21 @@
     renderDeviceBadge("hum-badge", humidity.enabled, data.humidifier);
     renderDeviceBadge("heat-badge", heating.enabled, data.heater);
     renderControls(data);
-    renderExtractor(data.extractor, data.extractorRemaining ?? null, !!data.extractorPaused, !!data.extractorWaitingHum);
+    const remainingMs = data.extractorRemainingMs ??
+      (data.extractorRemaining == null ? null : data.extractorRemaining * 1000);
+    renderExtractor(data.extractor, remainingMs, measuredAt, !!data.extractorPaused, !!data.extractorWaitingHum);
     renderWater(data);
   }
 
   async function update() {
     try {
+      const sentAt = performance.now();
       const res = await fetch("/sensors", { cache: "no-store" });
       if (!res.ok) throw new Error(res.status);
+      // El ESP32 midió el tiempo restante más o menos a mitad de camino entre pedido y respuesta
+      const measuredAt = (sentAt + performance.now()) / 2;
       const data = await res.json();
-      renderSensors(data);
+      renderSensors(data, measuredAt);
       renderOnline(true);
       selfData = data;
       const self = devices.find((d) => d.self);
