@@ -23,10 +23,13 @@ static const int RESET_PIN = 0;  // Botón BOOT
 static const int DHT_PIN = 4;
 static const int DHT_POWER_PIN = 5;   // VCC del módulo DHT22: se alimenta desde un pin para poder reiniciarlo
 static const int HUMIDIFIER_PIN = 26;  // IN del módulo relé del humidificador
-static const int EXTRACTOR_PIN = 27;  // IN del módulo relé del extractor
+static const int EXTRACTOR_PIN = 27;  // CH1 del relé de estado sólido del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
 static const int FLOAT_PIN = 13;      // Flotante del tanque a GND
-static const bool RELAY_ACTIVE_HIGH = false;  // Estos módulos se activan con señal baja (LOW = relé cerrado)
+// Con qué nivel prende cada salida (true = HIGH prende, false = LOW prende)
+static const bool HUMIDIFIER_ACTIVE_HIGH = false;  // Relé común, se activa con señal baja
+static const bool EXTRACTOR_ACTIVE_HIGH = true;    // Relé de estado sólido: aunque dice "low level trigger", prende con HIGH
+static const bool HEATER_ACTIVE_HIGH = false;      // Relé común, se activa con señal baja
 static const int FLOAT_EMPTY_LEVEL = LOW;     // Este flotante cierra el circuito cuando el tanque está vacío
 static const unsigned long EXTRACTOR_MAX_SEC = 86400;  // 24 h
 static const unsigned long DHT_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas
@@ -224,8 +227,8 @@ void handleStatus() {
   server.send(200, "application/json", "{\"status\":\"OK\"}");
 }
 
-void setRelay(int pin, bool on) {
-  digitalWrite(pin, on == RELAY_ACTIVE_HIGH ? HIGH : LOW);
+void setRelay(int pin, bool activeHigh, bool on) {
+  digitalWrite(pin, on == activeHigh ? HIGH : LOW);
 }
 
 void setHumidifier(bool on) {
@@ -233,7 +236,7 @@ void setHumidifier(bool on) {
   humidifierOn = on;
   if (on) humidifierOnSince = millis();
   else humidifierOnMs += millis() - humidifierOnSince;
-  setRelay(HUMIDIFIER_PIN, on);
+  setRelay(HUMIDIFIER_PIN, HUMIDIFIER_ACTIVE_HIGH, on);
   logMsg(on ? "Humidificador ENCENDIDO" : "Humidificador APAGADO");
 }
 
@@ -266,7 +269,7 @@ void setHeater(bool on) {
   heaterOn = on;
   if (on) heaterOnSince = millis();
   else heaterOnMs += millis() - heaterOnSince;
-  setRelay(HEATER_PIN, on);
+  setRelay(HEATER_PIN, HEATER_ACTIVE_HIGH, on);
   logMsg(on ? "Calefacción ENCENDIDA" : "Calefacción APAGADA");
 }
 
@@ -844,7 +847,7 @@ void setExtractor(bool on) {
   extractorOn = on;
   extWaitingHum = false;
   phaseStartedAt = millis();
-  setRelay(EXTRACTOR_PIN, on);
+  setRelay(EXTRACTOR_PIN, EXTRACTOR_ACTIVE_HIGH, on);
   logMsg(on ? "Extractor ENCENDIDO" : "Extractor APAGADO");
 }
 
@@ -1328,11 +1331,11 @@ void setup() {
   pinMode(DHT_POWER_PIN, OUTPUT);
   digitalWrite(DHT_POWER_PIN, HIGH);  // Prende el sensor primero así tiene tiempo de arrancar
   pinMode(HUMIDIFIER_PIN, OUTPUT);
-  setRelay(HUMIDIFIER_PIN, false);
+  setRelay(HUMIDIFIER_PIN, HUMIDIFIER_ACTIVE_HIGH, false);
   pinMode(EXTRACTOR_PIN, OUTPUT);
-  setRelay(EXTRACTOR_PIN, false);
+  setRelay(EXTRACTOR_PIN, EXTRACTOR_ACTIVE_HIGH, false);
   pinMode(HEATER_PIN, OUTPUT);
-  setRelay(HEATER_PIN, false);
+  setRelay(HEATER_PIN, HEATER_ACTIVE_HIGH, false);
 
   Serial.begin(115200);
   pinMode(RESET_PIN, INPUT_PULLUP);

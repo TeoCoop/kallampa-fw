@@ -9,24 +9,24 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | DHT22 | VCC (+) | GPIO5 | Se alimenta desde un pin (no del 3V3) para que el ESP32 pueda reiniciarlo si deja de leer. |
 | DHT22 | DATA (out) | GPIO4 | Si es el sensor suelto (4 patas, sin módulo), poner una resistencia de 10kΩ entre DATA y VCC (+) del sensor. Los módulos de 3 pines ya la traen. |
 | DHT22 | GND (−) | GND | |
-| Relé humidificador | DC+ (VCC) | 3V3 | Mismo modelo de módulo que el del extractor. |
+| Relé humidificador | DC+ (VCC) | 3V3 | Módulo Tongling 3,3V DC (JQC-3FF-S-Z). |
 | Relé humidificador | DC− (GND) | GND | |
 | Relé humidificador | IN | GPIO26 | Señal del humidificador. |
 | Relé humidificador | COM + NO | Cable de alimentación del humidificador | Cortar un cable de la alimentación del humidificador y conectar un extremo a COM y el otro a NO. Si es de 220V, **hacerlo sin tensión y bien aislado.** |
-| Relé extractor | DC+ (VCC) | 3V3 | Módulo Tongling 3,3V DC (JQC-3FF-S-Z). |
-| Relé extractor | DC− (GND) | GND | |
-| Relé extractor | IN | GPIO27 | Señal del extractor. |
-| Relé extractor | COM + NO | Cable de fase del extractor | Cortar el cable de fase y conectar un extremo a COM y el otro a NO. **220V: hacerlo sin tensión y bien aislado.** El relé soporta 10A / 250VAC. |
-| Relé calefacción | DC+ (VCC) | 3V3 | Mismo modelo de módulo que el del extractor. |
+| Relé extractor | DC+ | VIN / 5V | Relé de estado sólido de 1 canal (G3MB-202P, 220V / 2A). **Va a 5V:** con 3V3 no se activa del todo y el extractor gira sin fuerza. |
+| Relé extractor | DC− | GND | |
+| Relé extractor | CH1 | GPIO27 | Señal del extractor. |
+| Relé extractor | Bornes de carga | Cable de fase del extractor | Cortar el cable de fase y conectar un extremo a cada borne. **220V: hacerlo sin tensión y bien aislado.** Soporta hasta 2A y pide una carga mínima de ~0,1A (~22W). No se puede probar con la continuidad del tester: solo conduce con 220V y el aparato conectado. |
+| Relé calefacción | DC+ (VCC) | 3V3 | Mismo modelo de módulo que el del humidificador. |
 | Relé calefacción | DC− (GND) | GND | |
 | Relé calefacción | IN | GPIO25 | Señal del generador de calor. |
-| Relé calefacción | COM + NO | Cable de fase del generador de calor | Igual que el extractor. **220V: hacerlo sin tensión y bien aislado.** Revisar que el consumo del calefactor no supere los 10A del relé. |
+| Relé calefacción | COM + NO | Cable de fase del generador de calor | Cortar el cable de fase y conectar un extremo a COM y el otro a NO. **220V: hacerlo sin tensión y bien aislado.** Revisar que el consumo del calefactor no supere los 10A del relé. |
 | Flotante del tanque | Cable 1 / Cable 2 | GPIO13 / GND | Da lo mismo cuál va a cada lado. El flotante usado **cierra el circuito cuando el tanque está vacío** y lo abre con agua. Usa el pull-up interno, no lleva resistencia. |
 | Botón BOOT | — | GPIO0 | Ya viene en la placa. Mantenerlo apretado al encender borra las credenciales WiFi. |
 
 Los pines se definen en `src/main.cpp` (`DHT_PIN`, `DHT_POWER_PIN`, `HUMIDIFIER_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
 
-Se usa el contacto **NO** (normalmente abierto) de los relés para que, si el ESP32 está apagado, el humidificador, el extractor y la calefacción queden apagados. Los módulos usados se activan con señal baja (`RELAY_ACTIVE_HIGH = false`, vale para los tres relés). Si se cambian por unos que funcionen al revés (el aparato prende cuando el panel dice apagado), cambiar `RELAY_ACTIVE_HIGH` a `true` en `src/main.cpp` y volver a subir el firmware.
+Se usa el contacto **NO** (normalmente abierto) de los relés para que, si el ESP32 está apagado, el humidificador, el extractor y la calefacción queden apagados. Cada salida tiene su propio nivel de activación en `src/main.cpp`: los relés del humidificador y la calefacción prenden con señal baja (`HUMIDIFIER_ACTIVE_HIGH` y `HEATER_ACTIVE_HIGH` en `false`), y el relé de estado sólido del extractor prende con señal alta (`EXTRACTOR_ACTIVE_HIGH = true`, aunque el módulo dice "low level trigger"). Si se cambia un módulo y el aparato funciona al revés (prende cuando el panel dice apagado), cambiar el valor de esa salida y volver a subir el firmware.
 
 ## Control de humedad
 
