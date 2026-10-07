@@ -9,6 +9,11 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | DHT22 | VCC (+) | GPIO5 | Se alimenta desde un pin (no del 3V3) para que el ESP32 pueda reiniciarlo si deja de leer. |
 | DHT22 | DATA (out) | GPIO4 | Si es el sensor suelto (4 patas, sin módulo), poner una resistencia de 10kΩ entre DATA y VCC (+) del sensor. Los módulos de 3 pines ya la traen. |
 | DHT22 | GND (−) | GND | |
+| SHT30 | VIN / VCC | GPIO5 | Igual que el DHT22: desde un pin para poder reiniciarlo (consume ~1,5 mA). **3,3V, no 5V:** los pull-up del módulo quedan a la tensión de VIN y el ESP32 no aguanta 5V en SDA/SCL. |
+| SHT30 | GND | GND | |
+| SHT30 | SDA | GPIO21 | I2C. El módulo ya trae los pull-up. |
+| SHT30 | SCL | GPIO22 | |
+| SHT30 | ADDR / ADR (si tiene) | Sin conectar | Libre o a GND → dirección 0x44; a VCC → 0x45. El firmware prueba las dos. ALERT / ALR también queda sin conectar. |
 | Relé humidificador | DC+ (VCC) | 3V3 | Módulo Tongling 3,3V DC (JQC-3FF-S-Z). |
 | Relé humidificador | DC− (GND) | GND | |
 | Relé humidificador | IN | GPIO26 | Señal del humidificador. |
@@ -24,7 +29,9 @@ Controlador de fructificación para cultivo de hongos basado en ESP32 DevKit (Pl
 | Flotante del tanque | Cable 1 / Cable 2 | GPIO13 / GND | Da lo mismo cuál va a cada lado. El flotante usado **cierra el circuito cuando el tanque está vacío** y lo abre con agua. Usa el pull-up interno, no lleva resistencia. |
 | Botón BOOT | — | GPIO0 | Ya viene en la placa. Mantenerlo apretado al encender borra las credenciales WiFi. |
 
-Los pines se definen en `src/main.cpp` (`DHT_PIN`, `DHT_POWER_PIN`, `HUMIDIFIER_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
+Se conecta **un solo sensor**, DHT22 o SHT30, y se elige cuál en **Configuración → Equipo → Sensor** (por defecto DHT22). El cambio se aplica sin reiniciar: el sensor se apaga y vuelve a prender con los pines del tipo elegido, y mientras tanto los controles siguen con la última lectura.
+
+Los pines se definen en `src/main.cpp` (`DHT_PIN`, `SHT_SDA_PIN`, `SHT_SCL_PIN`, `SENSOR_POWER_PIN`, `HUMIDIFIER_PIN`, `EXTRACTOR_PIN`, `HEATER_PIN`, `FLOAT_PIN`, `RESET_PIN`).
 
 Se usa el contacto **NO** (normalmente abierto) de los relés para que, si el ESP32 está apagado, el humidificador, el extractor y la calefacción queden apagados. Cada salida tiene su propio nivel de activación en `src/main.cpp`: los relés del humidificador y la calefacción prenden con señal baja (`HUMIDIFIER_ACTIVE_HIGH` y `HEATER_ACTIVE_HIGH` en `false`), y el relé de estado sólido del extractor prende con señal alta (`EXTRACTOR_ACTIVE_HIGH = true`, aunque el módulo dice "low level trigger"). Si se cambia un módulo y el aparato funciona al revés (prende cuando el panel dice apagado), cambiar el valor de esa salida y volver a subir el firmware.
 
@@ -38,7 +45,7 @@ Desde la página se configuran el mínimo y el máximo de humedad y un interrupt
 - Humedad igual o mayor al máximo → humidificador apagado.
 - Entre los dos valores mantiene el estado anterior.
 - Al guardar una configuración nueva se reevalúa desde cero: queda encendido solo si la humedad está por debajo del nuevo mínimo.
-- Si el DHT22 deja de leer, se sigue usando la última lectura válida hasta **2 minutos** (el panel muestra `REINTENTANDO`); si en ese tiempo no vuelve, el humidificador se apaga por seguridad (`ERROR SENSOR`).
+- Si el sensor deja de leer, se sigue usando la última lectura válida hasta **2 minutos** (el panel muestra `REINTENTANDO`); si en ese tiempo no vuelve, el humidificador se apaga por seguridad (`ERROR SENSOR`).
 
 ## Calefacción
 
@@ -54,7 +61,7 @@ Siempre se cumple:
 - Si se sale del rango 3 veces en 3 horas, se asume que lo aprendido ya no sirve (se cambió el calefactor, la carpa, etc.) y vuelve a aprender.
 - Lo aprendido se guarda en el ESP32 y sobrevive reinicios.
 - En **Ajustar** también se carga la potencia del calefactor (por defecto 150 W); el historial la usa para estimar el consumo en kWh.
-- Si el DHT22 deja de leer, se sigue usando la última lectura válida hasta **2 minutos**; si en ese tiempo no vuelve, la calefacción se apaga por seguridad.
+- Si el sensor deja de leer, se sigue usando la última lectura válida hasta **2 minutos**; si en ese tiempo no vuelve, la calefacción se apaga por seguridad.
 
 ## Extractor
 
@@ -144,7 +151,7 @@ actuadores,device=carpa-1,id=0c2cc8 humidificador_seg=120i,calefaccion_seg=0i,ex
 ```
 
 - `device` es el nombre del equipo; `id` sale de la MAC y no cambia aunque se renombre.
-- `ambiente` se omite si en ese momento la lectura del DHT22 es inválida.
+- `ambiente` se omite si en ese momento la lectura del sensor es inválida.
 - `humidificador_seg` / `calefaccion_seg` / `extractor_seg` son los segundos encendido dentro de cada intervalo: sumándolos se obtiene el tiempo total de cualquier período.
 - La hora se toma por NTP (UTC). Hasta sincronizarla, no se toman muestras.
 - Si no hay conexión o InfluxDB no responde, las muestras quedan en la RAM del equipo (hasta ~12 h, máximo 144 muestras) y se envían en el próximo intento. Se pierden si el ESP32 se reinicia.
@@ -208,8 +215,8 @@ La tarjeta **Registro**, al final del panel, muestra los últimos 100 mensajes d
 |---|---|
 | `/` | Página con temperatura y humedad en vivo |
 | `/status` | `{"status":"OK"}` |
-| `GET /device` | Este equipo: `{"id":"a1b2c3","name":"carpa-1","version":"039601a 2026-09-24 13:43","ip":"192.168.1.142"}` |
-| `POST /device` | Parámetro de formulario `name`; cambia el nombre (400 si no es válido) |
+| `GET /device` | Este equipo: `{"id":"a1b2c3","name":"carpa-1","version":"039601a 2026-09-24 13:43","ip":"192.168.1.142","sensor":"dht22"}` (`sensor`: `"dht22"` o `"sht30"`) |
+| `POST /device` | Parámetros de formulario `name` y `sensor` (`dht22` o `sht30`), los dos opcionales; cambia el nombre y/o el sensor (400 si no es válido) |
 | `GET /logs?since=<seq>` | Registro: `{"now":123456,"last":42,"entries":[{"seq":42,"ms":120000,"repeat":1,"text":"Extractor ENCENDIDO"}]}` con los mensajes posteriores a `since` (`now` y `ms` son milisegundos desde el arranque) |
 | `GET /history-config` | Historial: `{"enabled":true,"url":"…","org":"…","bucket":"…","tokenSet":true,"intervalMin":5,"pending":0,"lastOk":1760000000,"lastError":""}` (el token nunca se devuelve) |
 | `POST /history-config` | Parámetros de formulario `enabled` (`1`/`0`), `url`, `org`, `bucket`, `token` (vacío = mantener el guardado) e `interval` (minutos, 1–60); 400 si no es válida |

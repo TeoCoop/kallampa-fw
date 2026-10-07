@@ -444,6 +444,8 @@
 
   #ext-times { flex-wrap: wrap; }
   #ext-times > .field { flex: 1 1 160px; }
+  #device-form { flex-wrap: wrap; }
+  #device-form > .field { flex: 1 1 160px; }
   #ext-times > .option,
   #ext-times > .help { flex-basis: 100%; }
 
@@ -1090,8 +1092,16 @@
             <label for="device-name-input">Nombre</label>
             <input id="device-name-input" type="text" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false" required>
           </div>
+          <div class="field">
+            <label for="device-sensor">Sensor</label>
+            <select id="device-sensor">
+              <option value="dht22">DHT22</option>
+              <option value="sht30">SHT30</option>
+            </select>
+          </div>
           <button type="submit" id="device-save">Guardar</button>
         </form>
+        <p class="help" id="sensor-pins"></p>
         <p class="message" id="device-message" role="status"></p>
       </section>
       <section class="card control">
@@ -1501,18 +1511,37 @@
   const NAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
   let device = null;
 
+  const SENSOR_PINS = {
+    dht22: "DHT22: DATA → GPIO4 · VCC → GPIO5 · GND → GND.",
+    sht30: "SHT30: SDA → GPIO21 · SCL → GPIO22 · VIN → GPIO5 (3,3 V, no 5 V) · GND → GND.",
+  };
+
+  function renderSensorPins() {
+    $("sensor-pins").textContent = "Conexión del " + SENSOR_PINS[$("device-sensor").value];
+  }
+
+  $("device-sensor").addEventListener("change", renderSensorPins);
+  renderSensorPins();
+
   function renderDevice() {
     $("device-name").textContent = device.name;
     document.title = device.name + " · Kallampa";
     $("device-info").textContent = "Dirección: http://" + device.name + ".local · IP " + device.ip
-      + (device.version ? " · Versión " + device.version : "");
+      + (device.version ? " · Versión " + device.version : "")
+      + (device.sensor ? " · Sensor " + device.sensor.toUpperCase() : "");
+  }
+
+  function fillDeviceForm() {
+    $("device-name-input").value = device.name;
+    if (device.sensor) $("device-sensor").value = device.sensor;
+    renderSensorPins();
   }
 
   async function loadDevice() {
     try {
       const res = await fetch("/device", { cache: "no-store" });
       device = await res.json();
-      $("device-name-input").value = device.name;
+      fillDeviceForm();
       renderDevice();
     } catch {
       showMessage("No se pudo cargar el dispositivo.", "error", "device-message");
@@ -1531,13 +1560,18 @@
 
     $("device-save").disabled = true;
     try {
-      const res = await fetch("/device", { method: "POST", body: new URLSearchParams({ name }) });
+      const prev = device;
+      const sensor = $("device-sensor").value;
+      const res = await fetch("/device", { method: "POST", body: new URLSearchParams({ name, sensor }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al guardar.");
       device = data;
-      $("device-name-input").value = device.name;
+      fillDeviceForm();
       renderDevice();
-      showMessage("Guardado. Nueva dirección: http://" + device.name + ".local", "ok", "device-message");
+      const notes = [];
+      if (!prev || prev.name !== device.name) notes.push("Nueva dirección: http://" + device.name + ".local");
+      if (prev && prev.sensor !== device.sensor) notes.push("El sensor se reinicia con los pines del " + device.sensor.toUpperCase() + ".");
+      showMessage(["Guardado.", ...notes].join(" "), "ok", "device-message");
       loadDevices();
     } catch (err) {
       showMessage(errorText(err), "error", "device-message");

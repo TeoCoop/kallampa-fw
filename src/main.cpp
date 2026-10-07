@@ -4,6 +4,8 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <DHT.h>
+#include <Wire.h>
+#include <Adafruit_SHT31.h>
 #include <Preferences.h>
 #include <vector>
 #include "mdns.h"
@@ -20,8 +22,10 @@
 
 static const char *AP_PASS = "12345678";
 static const int RESET_PIN = 0;  // Botón BOOT
-static const int DHT_PIN = 4;
-static const int DHT_POWER_PIN = 5;   // VCC del módulo DHT22: se alimenta desde un pin para poder reiniciarlo
+static const int DHT_PIN = 4;           // DATA del DHT22
+static const int SHT_SDA_PIN = 21;     // SDA del SHT30 (I2C)
+static const int SHT_SCL_PIN = 22;     // SCL del SHT30 (I2C)
+static const int SENSOR_POWER_PIN = 5;   // VCC del sensor (DHT22 o SHT30): se alimenta desde un pin para poder reiniciarlo
 static const int HUMIDIFIER_PIN = 26;  // IN del módulo relé del humidificador
 static const int EXTRACTOR_PIN = 27;  // CH1 del relé de estado sólido del extractor
 static const int HEATER_PIN = 25;     // IN del módulo relé de la calefacción
@@ -32,13 +36,13 @@ static const bool EXTRACTOR_ACTIVE_HIGH = true;    // Relé de estado sólido: a
 static const bool HEATER_ACTIVE_HIGH = false;      // Relé común, se activa con señal baja
 static const int FLOAT_EMPTY_LEVEL = LOW;     // Este flotante cierra el circuito cuando el tanque está vacío
 static const unsigned long EXTRACTOR_MAX_SEC = 86400;  // 24 h
-static const unsigned long DHT_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas
+static const unsigned long SENSOR_INTERVAL_MS = 2500;  // El DHT22 necesita al menos 2 s entre lecturas (el SHT30 usa lo mismo)
 static const unsigned long FLOAT_DEBOUNCE_MS = 3000;  // El flotante tiene que quedarse quieto 3 s (el agua se mueve)
 static const unsigned long SENSOR_GRACE_MS = 2UL * 60 * 1000;  // Si falla, se sigue con la última lectura hasta 2 min
-static const uint8_t DHT_FAILS_BEFORE_RESET = 3;  // Lecturas fallidas seguidas antes de reiniciar el sensor
-static const unsigned long DHT_POWER_OFF_MS = 1000;  // Tiempo sin alimentación al reiniciarlo
-static const unsigned long DHT_WARMUP_MS = 2000;     // El DHT22 necesita unos segundos después de prender
-static const unsigned long DHT_RESET_MIN_INTERVAL_MS = 30000;  // Como mucho un reinicio cada 30 s
+static const uint8_t SENSOR_FAILS_BEFORE_RESET = 3;  // Lecturas fallidas seguidas antes de reiniciar el sensor
+static const unsigned long SENSOR_POWER_OFF_MS = 1000;  // Tiempo sin alimentación al reiniciarlo
+static const unsigned long SENSOR_WARMUP_MS = 2000;     // El DHT22 necesita unos segundos después de prender
+static const unsigned long SENSOR_RESET_MIN_INTERVAL_MS = 30000;  // Como mucho un reinicio cada 30 s
 static const unsigned long DISCOVERY_INTERVAL_MS = 30000;
 static const uint32_t DISCOVERY_TIMEOUT_MS = 3000;
 static const size_t MAX_PEERS = 20;
@@ -58,6 +62,7 @@ static const unsigned long HEAT_LIMIT_HITS_WINDOW_MS = 3UL * 3600 * 1000;  // ..
 
 WebServer server(80);
 DHT dht(DHT_PIN, DHT22);
+Adafruit_SHT31 sht;
 Preferences prefs;
 
 String deviceId;    // Últimos 3 bytes de la MAC, ej. "a1b2c3"
@@ -80,12 +85,15 @@ unsigned long lastValidAt = 0;
 unsigned long sensorFailingSince = 0;  // 0 = el sensor está leyendo bien
 bool sensorGraceExpired = false;
 unsigned long lastReadAt = 0;
-enum DhtPower { DHT_PWR_READY, DHT_PWR_OFF, DHT_PWR_WARMUP };
-DhtPower dhtPower = DHT_PWR_READY;
-unsigned long dhtPowerChangedAt = 0;
-unsigned long dhtLastResetAt = 0;
-bool dhtWasReset = false;
-uint8_t dhtFailsInRow = 0;
+enum SensorType : uint8_t { SENSOR_DHT22, SENSOR_SHT30 };
+SensorType sensorType = SENSOR_DHT22;  // Se elige en Configuración → Equipo
+bool shtFound = false;                 // El SHT30 respondió en el I2C
+enum SensorPower { SENSOR_PWR_READY, SENSOR_PWR_OFF, SENSOR_PWR_WARMUP };
+SensorPower sensorPower = SENSOR_PWR_READY;
+unsigned long sensorPowerChangedAt = 0;
+unsigned long sensorLastResetAt = 0;
+bool sensorWasReset = false;
+uint8_t sensorFailsInRow = 0;
 
 bool humEnabled = true;
 int humMin = 85;
@@ -470,35 +478,71 @@ void restartHeater() {
   }
 }
 
-// Se corta también la línea de datos: si no, el sensor sigue alimentado a medias por el pull-up
-void dhtPowerOff() {
-  digitalWrite(DHT_POWER_PIN, LOW);
-  pinMode(DHT_PIN, OUTPUT);
-  digitalWrite(DHT_PIN, LOW);
-  dhtPower = DHT_PWR_OFF;
-  dhtPowerChangedAt = millis();
+const char *sensorName() {
+  return sensorType == SENSOR_SHT30 ? "SHT30" : "DHT22";
 }
 
-void dhtPowerOn() {
-  digitalWrite(DHT_POWER_PIN, HIGH);
-  dht.begin();  // Vuelve a configurar el pin de datos
-  dhtPower = DHT_PWR_WARMUP;
-  dhtPowerChangedAt = millis();
+const char *sensorKey() {
+  return sensorType == SENSOR_SHT30 ? "sht30" : "dht22";
+}
+
+// El SHT30 viene en 0x44 (ADDR libre o a GND) o en 0x45 (ADDR a VCC)
+void shtBegin() {
+  Wire.begin(SHT_SDA_PIN, SHT_SCL_PIN);
+  shtFound = sht.begin(0x44) || sht.begin(0x45);
+  if (!shtFound) logMsg("SHT30: no responde en el I2C (revisar SDA en GPIO%d y SCL en GPIO%d)", SHT_SDA_PIN, SHT_SCL_PIN);
+}
+
+// Se cortan también las líneas de datos: si no, el sensor sigue alimentado a medias por el pull-up
+void sensorPowerOff() {
+  digitalWrite(SENSOR_POWER_PIN, LOW);
+  if (sensorType == SENSOR_SHT30) {
+    Wire.end();
+    shtFound = false;
+    for (int pin : {SHT_SDA_PIN, SHT_SCL_PIN}) {
+      pinMode(pin, OUTPUT);
+      digitalWrite(pin, LOW);
+    }
+  } else {
+    pinMode(DHT_PIN, OUTPUT);
+    digitalWrite(DHT_PIN, LOW);
+  }
+  sensorPower = SENSOR_PWR_OFF;
+  sensorPowerChangedAt = millis();
+}
+
+void sensorPowerOn() {
+  digitalWrite(SENSOR_POWER_PIN, HIGH);
+  if (sensorType == SENSOR_SHT30) {
+    // Se sueltan SDA y SCL (los levantan los pull-up del módulo); el I2C arranca al terminar el calentamiento
+    pinMode(SHT_SDA_PIN, INPUT);
+    pinMode(SHT_SCL_PIN, INPUT);
+  } else {
+    dht.begin();  // Vuelve a configurar el pin de datos
+  }
+  sensorPower = SENSOR_PWR_WARMUP;
+  sensorPowerChangedAt = millis();
 }
 
 // Avanza el reinicio sin bloquear el loop (el panel, OTA y los relés siguen andando)
-void updateDhtPower() {
-  if (dhtPower == DHT_PWR_OFF && millis() - dhtPowerChangedAt >= DHT_POWER_OFF_MS) {
-    dhtPowerOn();
-  } else if (dhtPower == DHT_PWR_WARMUP && millis() - dhtPowerChangedAt >= DHT_WARMUP_MS) {
-    dhtPower = DHT_PWR_READY;
-    lastReadAt = millis() - DHT_INTERVAL_MS;  // Leer enseguida
+void updateSensorPower() {
+  if (sensorPower == SENSOR_PWR_OFF && millis() - sensorPowerChangedAt >= SENSOR_POWER_OFF_MS) {
+    sensorPowerOn();
+  } else if (sensorPower == SENSOR_PWR_WARMUP && millis() - sensorPowerChangedAt >= SENSOR_WARMUP_MS) {
+    sensorPower = SENSOR_PWR_READY;
+    if (sensorType == SENSOR_SHT30) shtBegin();
+    lastReadAt = millis() - SENSOR_INTERVAL_MS;  // Leer enseguida
   }
 }
 
 void readSensor() {
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
+  float t = NAN, h = NAN;
+  if (sensorType == SENSOR_SHT30) {
+    if (shtFound) sht.readBoth(&t, &h);  // Si falla (CRC o sin respuesta) deja NaN
+  } else {
+    t = dht.readTemperature();
+    h = dht.readHumidity();
+  }
   // Además de NaN, se descartan valores imposibles: con el cableado mal (ej. sin pull-up)
   // el DHT22 puede devolver todo en cero y pasar el checksum
   bool valid = !isnan(t) && !isnan(h) && !(t == 0 && h == 0) &&
@@ -512,22 +556,22 @@ void readSensor() {
     hasValidRead = true;
     lastValidAt = millis();
     if (sensorFailingSince) {
-      logMsg("DHT22: volvió a leer después de %lu s sin lecturas", (millis() - sensorFailingSince) / 1000);
+      logMsg("%s: volvió a leer después de %lu s sin lecturas", sensorName(), (millis() - sensorFailingSince) / 1000);
       sensorFailingSince = 0;
     }
     sensorGraceExpired = false;
-    dhtFailsInRow = 0;
+    sensorFailsInRow = 0;
   } else {
     if (!sensorFailingSince) sensorFailingSince = millis();
-    logMsg("Error leyendo el DHT22 (t=%.1f h=%.1f)", t, h);
-    if (dhtFailsInRow < 255) dhtFailsInRow++;
-    if (dhtFailsInRow >= DHT_FAILS_BEFORE_RESET &&
-        (!dhtWasReset || millis() - dhtLastResetAt >= DHT_RESET_MIN_INTERVAL_MS)) {
-      logMsg("DHT22: %u lecturas fallidas seguidas, se reinicia el sensor", dhtFailsInRow);
-      dhtFailsInRow = 0;
-      dhtWasReset = true;
-      dhtLastResetAt = millis();
-      dhtPowerOff();
+    logMsg("Error leyendo el %s (t=%.1f h=%.1f)", sensorName(), t, h);
+    if (sensorFailsInRow < 255) sensorFailsInRow++;
+    if (sensorFailsInRow >= SENSOR_FAILS_BEFORE_RESET &&
+        (!sensorWasReset || millis() - sensorLastResetAt >= SENSOR_RESET_MIN_INTERVAL_MS)) {
+      logMsg("%s: %u lecturas fallidas seguidas, se reinicia el sensor", sensorName(), sensorFailsInRow);
+      sensorFailsInRow = 0;
+      sensorWasReset = true;
+      sensorLastResetAt = millis();
+      sensorPowerOff();
     }
   }
 
@@ -535,7 +579,7 @@ void readSensor() {
   lastReadOk = hasValidRead && millis() - lastValidAt < SENSOR_GRACE_MS;
   if (!lastReadOk && sensorFailingSince && !sensorGraceExpired) {
     sensorGraceExpired = true;
-    logMsg("DHT22 sin lecturas por %lu min: se apagan humidificador y calefacción", SENSOR_GRACE_MS / 60000);
+    logMsg("%s sin lecturas por %lu min: se apagan humidificador y calefacción", sensorName(), SENSOR_GRACE_MS / 60000);
   }
   updateHumidifier();
   updateHeater();
@@ -646,6 +690,7 @@ String deviceJson() {
   return "{\"id\":" + jsonString(deviceId) +
          ",\"name\":" + jsonString(deviceName) +
          ",\"version\":" + jsonString(FW_VERSION) +
+         ",\"sensor\":" + jsonString(sensorKey()) +
          ",\"ip\":" + jsonString(WiFi.localIP().toString()) + "}";
 }
 
@@ -670,13 +715,38 @@ void handleGetDevice() {
   server.send(200, "application/json", deviceJson());
 }
 
+// Cambia de sensor sin reiniciar: lo apaga con los pines del anterior y lo prende con los del nuevo.
+// Mientras tanto los controles siguen con la última lectura (la misma gracia que en un reinicio del sensor).
+void setSensorType(SensorType type) {
+  if (type == sensorType) return;
+  sensorPowerOff();
+  sensorType = type;
+  prefs.putUChar("sensor", sensorType);
+  sensorFailsInRow = 0;
+  sensorWasReset = false;
+  tempRingCount = 0;  // No mezclar lecturas de los dos sensores en el promedio
+  tempRingPos = 0;
+  logMsg("Sensor: %s", sensorName());
+}
+
 void handlePostDevice() {
-  String name = server.arg("name");
+  SensorType newSensor = sensorType;
+  if (server.hasArg("sensor")) {
+    String sensor = server.arg("sensor");
+    if (sensor == "dht22") newSensor = SENSOR_DHT22;
+    else if (sensor == "sht30") newSensor = SENSOR_SHT30;
+    else {
+      server.send(400, "application/json", "{\"error\":\"El sensor tiene que ser dht22 o sht30\"}");
+      return;
+    }
+  }
+  String name = server.hasArg("name") ? server.arg("name") : deviceName;
   name.trim();
   if (!isValidName(name)) {
     server.send(400, "application/json", "{\"error\":\"El nombre solo puede tener letras minúsculas, números y guiones (1 a 32, sin guion al principio ni al final)\"}");
     return;
   }
+  setSensorType(newSensor);
   if (name != deviceName) {
     deviceName = name;
     prefs.putString("name", deviceName);
@@ -1328,8 +1398,8 @@ void startOta() {
 }
 
 void setup() {
-  pinMode(DHT_POWER_PIN, OUTPUT);
-  digitalWrite(DHT_POWER_PIN, HIGH);  // Prende el sensor primero así tiene tiempo de arrancar
+  pinMode(SENSOR_POWER_PIN, OUTPUT);
+  digitalWrite(SENSOR_POWER_PIN, HIGH);  // Prende el sensor primero así tiene tiempo de arrancar (sirve para los dos)
   pinMode(HUMIDIFIER_PIN, OUTPUT);
   setRelay(HUMIDIFIER_PIN, HUMIDIFIER_ACTIVE_HIGH, false);
   pinMode(EXTRACTOR_PIN, OUTPUT);
@@ -1392,7 +1462,10 @@ void setup() {
   historyIntervalMin = prefs.getUShort("histInt", historyIntervalMin);
   if (historyIntervalMin < 1 || historyIntervalMin > HISTORY_INTERVAL_MAX_MIN) historyIntervalMin = 5;
 
-  dht.begin();
+  sensorType = prefs.getUChar("sensor", SENSOR_DHT22) == SENSOR_SHT30 ? SENSOR_SHT30 : SENSOR_DHT22;
+  logMsg("Sensor: %s", sensorName());
+  if (sensorType == SENSOR_SHT30) shtBegin();
+  else dht.begin();
 
   WiFiManager wm;
 
@@ -1448,8 +1521,8 @@ void loop() {
   ArduinoOTA.handle();
   server.handleClient();
 
-  updateDhtPower();
-  if (dhtPower == DHT_PWR_READY && millis() - lastReadAt >= DHT_INTERVAL_MS) {
+  updateSensorPower();
+  if (sensorPower == SENSOR_PWR_READY && millis() - lastReadAt >= SENSOR_INTERVAL_MS) {
     lastReadAt = millis();
     readSensor();
   }
